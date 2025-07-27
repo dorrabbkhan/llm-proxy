@@ -1,0 +1,49 @@
+# API Mappings Configuration
+# This file defines how API requests are proxied between different LLM providers
+# 
+# Structure:
+# - mappings: List of API mapping configurations
+#   - source_api: The API format of incoming requests (OPENAI, GEMINI, OLLAMA, QWEN)
+#   - target_api: The API format to transform requests into (OPENAI, GEMINI, OLLAMA, QWEN)
+#   - proxy_path_prefix: The URL path prefix to match for this mapping
+#   - target_base_url_env_var: Environment variable name containing the target API base URL
+#   - target_api_key_env_var: Environment variable name containing the target API key (null if not required)
+#   - request_transform: Function name to transform request from source to target format
+#   - response_transform: Function name to transform response from target back to source format
+
+mappings:
+  # OpenAI → Gemini: Route OpenAI-formatted requests to Gemini API
+  - source_api: "OPENAI"
+    target_api: "GEMINI"
+    proxy_path_prefix: "/v1/chat/completions"
+    target_base_url_env_var: "GEMINI_API_BASE_URL"
+    target_api_key_env_var: "GEMINI_API_KEY"
+    request_transform: "openaiToGeminiChat"
+    response_transform: "geminiToOpenAIChat"
+
+  # OpenAI → Ollama: Route OpenAI-formatted requests to Ollama API
+  - source_api: "OPENAI"
+    target_api: "OLLAMA"
+    proxy_path_prefix: "/v1/chat/completions"
+    target_base_url_env_var: "OLLAMA_API_BASE_URL"
+    target_api_key_env_var: null
+    request_transform: "openaiToOllamaChat"
+    response_transform: "ollamaToOpenAIChat"
+
+  # Gemini → OpenAI: Route Gemini-formatted requests to OpenAI API
+  - source_api: "GEMINI"
+    target_api: "OPENAI"
+    proxy_path_prefix: "/v1beta/models/gemini-pro:generateContent"
+    target_base_url_env_var: "OPENAI_API_BASE_URL"
+    target_api_key_env_var: "OPENAI_API_KEY"
+    request_transform: "geminiToOpenAIChat"
+    response_transform: "openaiToGeminiChat"
+
+  # Ollama → OpenAI: Route Ollama-formatted requests to OpenAI API
+  - source_api: "OLLAMA"
+    target_api: "OPENAI"
+    proxy_path_prefix: "/api/generate"
+    target_base_url_env_var: "OPENAI_API_BASE_URL"
+    target_api_key_env_var: "OPENAI_API_KEY"
+    request_transform: "ollamaToOpenAIChat"
+    response_transform: "openaiToOllamaChat"

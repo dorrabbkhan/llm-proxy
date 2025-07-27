@@ -73,3 +73,8 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 # add them here. For example:
 # /temp_data/
 # /test_results/
+
+.taskmaster
+.windsurf
+.gemini
+GEMINI.md

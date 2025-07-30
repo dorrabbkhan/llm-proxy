@@ -6,7 +6,12 @@
 /**
  * Supported API providers
  */
-export type ApiProvider = "OPENAI" | "GEMINI" | "OLLAMA" | "QWEN";
+export enum ApiProvider {
+  OPENAI = "OPENAI",
+  GEMINI = "GEMINI",
+  OLLAMA = "OLLAMA",
+  QWEN = "QWEN",
+}
 
 /**
  * Single API mapping configuration

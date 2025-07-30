@@ -5,7 +5,7 @@ import { parse } from "yaml";
 import { ApiMappingsConfig, ApiMapping } from "../types/api-mapping";
 
 describe("API Mappings Structure", () => {
-  const yamlPath = path.join(__dirname, "..", "api-mappings.yaml");
+  const yamlPath = path.join(__dirname, "api-mappings.yaml");
 
   it("should parse the YAML file without errors", () => {
     const fileContents = fs.readFileSync(yamlPath, "utf8");

@@ -1,49 +1,53 @@
 # API Mappings Configuration
 # This file defines how API requests are proxied between different LLM providers
-# 
+#
 # Structure:
 # - mappings: List of API mapping configurations
-#   - source_api: The API format of incoming requests (OPENAI, GEMINI, OLLAMA, ANTHROPIC)
-#   - target_api: The API format to transform requests into (OPENAI, GEMINI, OLLAMA, ANTHROPIC)
+#   - source_api: The API format of incoming requests (openai, gemini, ollama, anthropic)
+#   - target_api: The API format to transform requests into (openai, gemini, ollama, anthropic)
 #   - proxy_path_prefix: The URL path prefix to match for this mapping
 #   - target_base_url_env_var: Environment variable name containing the target API base URL
 #   - target_api_key_env_var: Environment variable name containing the target API key (null if not required)
-#   - request_transform: Function name to transform request from source to target format
-#   - response_transform: Function name to transform response from target back to source format
 
 mappings:
   # OpenAI → Gemini: Route OpenAI-formatted requests to Gemini API
-  - source_api: "OPENAI"
-    target_api: "GEMINI"
-    proxy_path_prefix: "/v1/chat/completions"
-    target_base_url_env_var: "GEMINI_API_BASE_URL"
-    target_api_key_env_var: "GEMINI_API_KEY"
-    request_transform: "openaiToGeminiChat"
-    response_transform: "geminiToOpenAIChat"
+  - source_api: openai
+    target_api: gemini
+    proxy_path_prefix: /v1/chat/completions
+    target_base_url_env_var: GEMINI_API_BASE_URL
+    target_api_key_env_var: GEMINI_API_KEY
 
   # OpenAI → Ollama: Route OpenAI-formatted requests to Ollama API
-  - source_api: "OPENAI"
-    target_api: "OLLAMA"
-    proxy_path_prefix: "/v1/chat/completions"
-    target_base_url_env_var: "OLLAMA_API_BASE_URL"
+  - source_api: openai
+    target_api: ollama
+    proxy_path_prefix: /v1/chat/completions
+    target_base_url_env_var: OLLAMA_API_BASE_URL
     target_api_key_env_var: null
-    request_transform: "openaiToOllamaChat"
-    response_transform: "ollamaToOpenAIChat"
+
+  # OpenAI → Anthropic: Route OpenAI-formatted requests to Anthropic API
+  - source_api: openai
+    target_api: anthropic
+    proxy_path_prefix: /v1/chat/completions
+    target_base_url_env_var: ANTHROPIC_API_BASE_URL
+    target_api_key_env_var: ANTHROPIC_API_KEY
 
   # Gemini → OpenAI: Route Gemini-formatted requests to OpenAI API
-  - source_api: "GEMINI"
-    target_api: "OPENAI"
-    proxy_path_prefix: "/v1beta/models/gemini-pro:generateContent"
-    target_base_url_env_var: "OPENAI_API_BASE_URL"
-    target_api_key_env_var: "OPENAI_API_KEY"
-    request_transform: "geminiToOpenAIChat"
-    response_transform: "openaiToGeminiChat"
+  - source_api: gemini
+    target_api: openai
+    proxy_path_prefix: /v1beta/models
+    target_base_url_env_var: OPENAI_API_BASE_URL
+    target_api_key_env_var: OPENAI_API_KEY
 
   # Ollama → OpenAI: Route Ollama-formatted requests to OpenAI API
-  - source_api: "OLLAMA"
-    target_api: "OPENAI"
-    proxy_path_prefix: "/api/generate"
-    target_base_url_env_var: "OPENAI_API_BASE_URL"
-    target_api_key_env_var: "OPENAI_API_KEY"
-    request_transform: "ollamaToOpenAIChat"
-    response_transform: "openaiToOllamaChat"
+  - source_api: ollama
+    target_api: openai
+    proxy_path_prefix: /api/chat
+    target_base_url_env_var: OPENAI_API_BASE_URL
+    target_api_key_env_var: OPENAI_API_KEY
+
+  # Anthropic → OpenAI: Route Anthropic-formatted requests to OpenAI API
+  - source_api: anthropic
+    target_api: openai
+    proxy_path_prefix: /v1/messages
+    target_base_url_env_var: OPENAI_API_BASE_URL
+    target_api_key_env_var: OPENAI_API_KEY

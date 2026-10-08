@@ -25,7 +25,7 @@ describe("API Mappings Structure", () => {
       expect(mapping.request_transform).toBeDefined();
       expect(mapping.response_transform).toBeDefined();
 
-      const validProviders = ["OPENAI", "GEMINI", "OLLAMA", "QWEN"];
+      const validProviders = ["OPENAI", "GEMINI", "OLLAMA", "ANTHROPIC"];
       expect(validProviders).toContain(mapping.source_api);
       expect(validProviders).toContain(mapping.target_api);
 

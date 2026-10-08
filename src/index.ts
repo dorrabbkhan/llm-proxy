@@ -1,21 +1,17 @@
-import express from "express";
+import { app } from "./app";
 import { config } from "./config/env-config";
+import { logger } from "./utils/logger";
 
-const app = express();
+const port = config.port || 3000;
 
-app.get("/health", (_, res) => {
-  res.status(200).send("OK");
-});
-
-app.use((_, res) => {
-  res.status(404).send("Not Found");
-});
-
-app.listen(config.port || 3000, () => {
-  console.log(`Server started on port ${config.port || 3000}`);
-  console.log(`Source API: ${config.sourceApi}`);
-  console.log(`Target API: ${config.targetApi}`);
-  console.log(
-    `Target API Key: ${config.targetApiKey ? "****" : "Not configured"}`
+app.listen(port, () => {
+  logger.info(
+    {
+      port,
+      sourceApi: config.sourceApi,
+      targetApi: config.targetApi,
+      targetApiKey: config.targetApiKey ? "****" : "Not configured",
+    },
+    "Server started",
   );
 });

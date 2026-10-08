@@ -17,7 +17,7 @@ export interface Config {
 export function loadConfig(): Config {
   if (!process.env.SOURCE_API || !process.env.TARGET_API) {
     throw new Error(
-      "SOURCE_API and TARGET_API environment variables are required"
+      "SOURCE_API and TARGET_API environment variables are required",
     );
   }
 
@@ -26,7 +26,7 @@ export function loadConfig(): Config {
   ) {
     throw new Error(
       "SOURCE_API environment variable must be one of: " +
-        Object.values(ApiProvider).join(", ")
+        Object.values(ApiProvider).join(", "),
     );
   }
 
@@ -35,7 +35,7 @@ export function loadConfig(): Config {
   ) {
     throw new Error(
       "TARGET_API environment variable must be one of: " +
-        Object.values(ApiProvider).join(", ")
+        Object.values(ApiProvider).join(", "),
     );
   }
 
@@ -47,11 +47,11 @@ export function loadConfig(): Config {
     case "OLLAMA":
       targetApiKey = process.env.OLLAMA_API_KEY;
       break;
-    case "QWEN":
-      targetApiKey = process.env.QWEN_API_KEY;
-      break;
     case "OPENAI":
       targetApiKey = process.env.OPENAI_API_KEY;
+      break;
+    case "ANTHROPIC":
+      targetApiKey = process.env.ANTHROPIC_API_KEY;
       break;
     default:
       targetApiKey = undefined;
@@ -61,7 +61,7 @@ export function loadConfig(): Config {
   if (!targetApiKey && process.env.TARGET_API !== "OLLAMA") {
     throw new Error(
       "TARGET_API_KEY environment variable is required for target API " +
-        process.env.TARGET_API
+        process.env.TARGET_API,
     );
   }
 

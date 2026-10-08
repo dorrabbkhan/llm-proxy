@@ -3,8 +3,8 @@
 # 
 # Structure:
 # - mappings: List of API mapping configurations
-#   - source_api: The API format of incoming requests (OPENAI, GEMINI, OLLAMA, QWEN)
-#   - target_api: The API format to transform requests into (OPENAI, GEMINI, OLLAMA, QWEN)
+#   - source_api: The API format of incoming requests (OPENAI, GEMINI, OLLAMA, ANTHROPIC)
+#   - target_api: The API format to transform requests into (OPENAI, GEMINI, OLLAMA, ANTHROPIC)
 #   - proxy_path_prefix: The URL path prefix to match for this mapping
 #   - target_base_url_env_var: Environment variable name containing the target API base URL
 #   - target_api_key_env_var: Environment variable name containing the target API key (null if not required)

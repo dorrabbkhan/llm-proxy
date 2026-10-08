@@ -28,7 +28,7 @@ describe("Environment Configuration", () => {
     unsetEnv("PORT");
 
     expect(() => loadConfig()).toThrow(
-      "SOURCE_API and TARGET_API environment variables are required"
+      "SOURCE_API and TARGET_API environment variables are required",
     );
   });
 
@@ -38,7 +38,7 @@ describe("Environment Configuration", () => {
     process.env.OPENAI_API_KEY = "test-openai-key";
 
     expect(() => loadConfig()).toThrow(
-      "SOURCE_API environment variable must be one of: "
+      "SOURCE_API environment variable must be one of: ",
     );
   });
 
@@ -48,7 +48,7 @@ describe("Environment Configuration", () => {
     process.env.OPENAI_API_KEY = "test-openai-key";
 
     expect(() => loadConfig()).toThrow(
-      "TARGET_API environment variable must be one of: "
+      "TARGET_API environment variable must be one of: ",
     );
   });
 
@@ -59,7 +59,7 @@ describe("Environment Configuration", () => {
     process.env.PORT = "4000";
 
     expect(() => loadConfig()).toThrow(
-      "TARGET_API_KEY environment variable is required for target API GEMINI"
+      "TARGET_API_KEY environment variable is required for target API GEMINI",
     );
   });
 
@@ -91,18 +91,18 @@ describe("Environment Configuration", () => {
     expect(config.targetApiKey).toBe("test-gemini-key");
   });
 
-  it("should load values from environment variables when properly set for QWEN", () => {
+  it("should load values from environment variables when properly set for ANTHROPIC", () => {
     process.env.SOURCE_API = "OPENAI" as ApiProvider;
-    process.env.TARGET_API = "QWEN" as ApiProvider;
-    process.env.QWEN_API_KEY = "test-qwen-key";
+    process.env.TARGET_API = "ANTHROPIC" as ApiProvider;
+    process.env.ANTHROPIC_API_KEY = "test-anthropic-key";
     process.env.PORT = "4000";
 
     const config = loadConfig();
 
     expect(config.sourceApi).toBe("OPENAI");
-    expect(config.targetApi).toBe("QWEN");
+    expect(config.targetApi).toBe("ANTHROPIC");
     expect(config.port).toBe(4000);
-    expect(config.targetApiKey).toBe("test-qwen-key");
+    expect(config.targetApiKey).toBe("test-anthropic-key");
   });
 
   it("should not require API key for OLLAMA target", () => {

@@ -10,7 +10,7 @@ export enum ApiProvider {
   OPENAI = "OPENAI",
   GEMINI = "GEMINI",
   OLLAMA = "OLLAMA",
-  QWEN = "QWEN",
+  ANTHROPIC = "ANTHROPIC",
 }
 
 /**

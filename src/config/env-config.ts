@@ -1,18 +1,27 @@
 import dotenv from "dotenv";
-import { ApiProvider } from "../types/api-mapping";
+import type { Provider } from "../transformers";
 
 dotenv.config();
 
+const VALID_PROVIDERS: Provider[] = ["openai", "gemini", "ollama", "anthropic"];
+
 export interface Config {
-  sourceApi: ApiProvider;
-  targetApi: ApiProvider;
-  port?: number;
+  sourceApi: Provider;
+  targetApi: Provider;
+  port: number;
   targetApiKey?: string;
+}
+
+function isValidProvider(value: string): value is Provider {
+  return VALID_PROVIDERS.includes(value.toLowerCase() as Provider);
+}
+
+function normalizeProvider(value: string): Provider {
+  return value.toLowerCase() as Provider;
 }
 
 /**
  * Loads configuration from environment variables
- * @returns Configuration object with environment variables
  */
 export function loadConfig(): Config {
   if (!process.env.SOURCE_API || !process.env.TARGET_API) {
@@ -21,67 +30,59 @@ export function loadConfig(): Config {
     );
   }
 
-  if (
-    !Object.values(ApiProvider).includes(process.env.SOURCE_API as ApiProvider)
-  ) {
-    throw new Error(
-      "SOURCE_API environment variable must be one of: " +
-        Object.values(ApiProvider).join(", "),
-    );
+  const sourceApi = process.env.SOURCE_API;
+  const targetApi = process.env.TARGET_API;
+
+  if (!isValidProvider(sourceApi)) {
+    throw new Error(`SOURCE_API must be one of: ${VALID_PROVIDERS.join(", ")}`);
   }
 
-  if (
-    !Object.values(ApiProvider).includes(process.env.TARGET_API as ApiProvider)
-  ) {
-    throw new Error(
-      "TARGET_API environment variable must be one of: " +
-        Object.values(ApiProvider).join(", "),
-    );
+  if (!isValidProvider(targetApi)) {
+    throw new Error(`TARGET_API must be one of: ${VALID_PROVIDERS.join(", ")}`);
   }
 
-  let targetApiKey: string | undefined;
-  switch (process.env.TARGET_API) {
-    case "GEMINI":
-      targetApiKey = process.env.GEMINI_API_KEY;
-      break;
-    case "OLLAMA":
-      targetApiKey = process.env.OLLAMA_API_KEY;
-      break;
-    case "OPENAI":
-      targetApiKey = process.env.OPENAI_API_KEY;
-      break;
-    case "ANTHROPIC":
-      targetApiKey = process.env.ANTHROPIC_API_KEY;
-      break;
-    default:
-      targetApiKey = undefined;
-      break;
-  }
+  const normalizedTarget = normalizeProvider(targetApi);
 
-  if (!targetApiKey && process.env.TARGET_API !== "OLLAMA") {
-    throw new Error(
-      "TARGET_API_KEY environment variable is required for target API " +
-        process.env.TARGET_API,
-    );
-  }
-
-  const envConfig: Config = {
-    sourceApi: process.env.SOURCE_API as ApiProvider,
-    targetApi: process.env.TARGET_API as ApiProvider,
-    port: process.env.PORT ? parseInt(process.env.PORT, 10) : 3000,
-    targetApiKey: targetApiKey,
+  // Get API key based on target
+  const apiKeyEnvVars: Record<Provider, string> = {
+    openai: "OPENAI_API_KEY",
+    gemini: "GEMINI_API_KEY",
+    ollama: "OLLAMA_API_KEY",
+    anthropic: "ANTHROPIC_API_KEY",
   };
 
-  return envConfig;
+  const targetApiKey = process.env[apiKeyEnvVars[normalizedTarget]];
+
+  // Ollama doesn't require an API key
+  if (!targetApiKey && normalizedTarget !== "ollama") {
+    throw new Error(
+      `${apiKeyEnvVars[normalizedTarget]} environment variable is required for target API ${targetApi}`,
+    );
+  }
+
+  return {
+    sourceApi: normalizeProvider(sourceApi),
+    targetApi: normalizedTarget,
+    port: process.env.PORT ? parseInt(process.env.PORT, 10) : 3000,
+    targetApiKey,
+  };
 }
 
 /**
- * Get the current configuration
- * @returns The current configuration
+ * Get the current configuration (lazy-loaded)
  */
-export const getConfig = (): Config => {
-  return loadConfig();
-};
+let _config: Config | null = null;
 
-// Export a singleton instance of the configuration
-export const config = loadConfig();
+export function getConfig(): Config {
+  if (!_config) {
+    _config = loadConfig();
+  }
+  return _config;
+}
+
+/**
+ * Reset config (for testing)
+ */
+export function resetConfig(): void {
+  _config = null;
+}

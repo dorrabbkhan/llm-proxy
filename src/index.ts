@@ -1,8 +1,9 @@
 import { app } from "./app";
-import { config } from "./config/env-config";
+import { getConfig } from "./config/env-config";
 import { logger } from "./utils/logger";
 
-const port = config.port || 3000;
+const config = getConfig();
+const port = config.port;
 
 app.listen(port, () => {
   logger.info(

@@ -11,6 +11,7 @@ app.listen(port, () => {
       port,
       sourceApi: config.sourceApi,
       targetApi: config.targetApi,
+      targetBaseUrl: config.targetBaseUrl,
       targetApiKey: config.targetApiKey ? "****" : "Not configured",
     },
     "Server started",

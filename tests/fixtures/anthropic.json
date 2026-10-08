@@ -1,0 +1,122 @@
+{
+  "requests": {
+    "basic": {
+      "model": "claude-3-opus-20240229",
+      "max_tokens": 1024,
+      "messages": [
+        { "role": "user", "content": "Hello" }
+      ]
+    },
+    "system": {
+      "model": "claude-3-opus-20240229",
+      "max_tokens": 1024,
+      "system": "You are a helpful assistant",
+      "messages": [
+        { "role": "user", "content": "Hello" }
+      ]
+    },
+    "params": {
+      "model": "claude-3-opus-20240229",
+      "max_tokens": 150,
+      "temperature": 0.7,
+      "top_p": 0.9,
+      "top_k": 40,
+      "stop_sequences": ["END"],
+      "messages": [
+        { "role": "user", "content": "Hello" }
+      ]
+    },
+    "multimodal": {
+      "model": "claude-3-opus-20240229",
+      "max_tokens": 1024,
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            { "type": "text", "text": "What is in this image?" },
+            {
+              "type": "image",
+              "source": {
+                "type": "base64",
+                "media_type": "image/png",
+                "data": "aW1hZ2VkYXRh"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "tools": {
+      "model": "claude-3-opus-20240229",
+      "max_tokens": 1024,
+      "messages": [
+        { "role": "user", "content": "What's the weather?" }
+      ],
+      "tools": [
+        {
+          "name": "get_weather",
+          "description": "Get current weather",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "location": { "type": "string" }
+            },
+            "required": ["location"]
+          }
+        }
+      ]
+    }
+  },
+  "responses": {
+    "basic": {
+      "id": "msg_abc123",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-3-opus-20240229",
+      "content": [
+        { "type": "text", "text": "Hello! How can I help you?" }
+      ],
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 10,
+        "output_tokens": 8
+      }
+    },
+    "length": {
+      "id": "msg_def456",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-3-opus-20240229",
+      "content": [
+        { "type": "text", "text": "This response was truncated" }
+      ],
+      "stop_reason": "max_tokens",
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 10,
+        "output_tokens": 150
+      }
+    },
+    "tool_use": {
+      "id": "msg_ghi789",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-3-opus-20240229",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_xyz",
+          "name": "get_weather",
+          "input": { "location": "Paris" }
+        }
+      ],
+      "stop_reason": "tool_use",
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 12
+      }
+    }
+  }
+}

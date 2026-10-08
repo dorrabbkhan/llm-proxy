@@ -10,6 +10,7 @@ export interface Config {
   targetApi: Provider;
   port: number;
   targetApiKey?: string;
+  targetBaseUrl: string;
 }
 
 function isValidProvider(value: string): value is Provider {
@@ -60,11 +61,21 @@ export function loadConfig(): Config {
     );
   }
 
+  // Upstream base URL follows the {PROVIDER}_API_BASE_URL convention
+  const baseUrlEnvVar = `${normalizedTarget.toUpperCase()}_API_BASE_URL`;
+  const targetBaseUrl = process.env[baseUrlEnvVar];
+  if (!targetBaseUrl) {
+    throw new Error(
+      `${baseUrlEnvVar} environment variable is required for target API ${targetApi}`,
+    );
+  }
+
   return {
     sourceApi: normalizeProvider(sourceApi),
     targetApi: normalizedTarget,
     port: process.env.PORT ? parseInt(process.env.PORT, 10) : 3000,
     targetApiKey,
+    targetBaseUrl: targetBaseUrl.replace(/\/$/, ""),
   };
 }
 

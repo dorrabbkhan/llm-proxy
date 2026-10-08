@@ -11,6 +11,8 @@ export interface Config {
   port: number;
   targetApiKey?: string;
   targetBaseUrl: string;
+  upstreamTimeoutMs: number;
+  upstreamRetries: number;
 }
 
 function isValidProvider(value: string): value is Provider {
@@ -76,6 +78,12 @@ export function loadConfig(): Config {
     port: process.env.PORT ? parseInt(process.env.PORT, 10) : 3000,
     targetApiKey,
     targetBaseUrl: targetBaseUrl.replace(/\/$/, ""),
+    upstreamTimeoutMs: process.env.UPSTREAM_TIMEOUT_MS
+      ? parseInt(process.env.UPSTREAM_TIMEOUT_MS, 10)
+      : 30_000,
+    upstreamRetries: process.env.UPSTREAM_RETRIES
+      ? parseInt(process.env.UPSTREAM_RETRIES, 10)
+      : 1,
   };
 }
 

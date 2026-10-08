@@ -1,23 +1,20 @@
-import type { Ollama } from "ollama";
+// Ollama API types
+// Reference: https://github.com/ollama/ollama/blob/main/docs/api.md
 
-// Extract types from Ollama client method parameters and return types
-type OllamaClient = InstanceType<typeof Ollama>;
+import type {
+  ChatRequest,
+  ChatResponse,
+  GenerateRequest,
+  GenerateResponse,
+  Message,
+  Options,
+} from "ollama";
 
-// Chat types
-export type OllamaChatRequest = Parameters<OllamaClient["chat"]>[0];
-export type OllamaChatResponse = Awaited<ReturnType<OllamaClient["chat"]>>;
-
-// Generate types (legacy completion API)
-export type OllamaGenerateRequest = Parameters<OllamaClient["generate"]>[0];
-export type OllamaGenerateResponse = Awaited<
-  ReturnType<OllamaClient["generate"]>
->;
-
-// Message type
-export type OllamaMessage = NonNullable<OllamaChatRequest["messages"]>[number];
-
-// Options type
-export type OllamaOptions = OllamaChatRequest["options"];
-
-// Role type
+// Re-export SDK types with consistent naming
+export type OllamaChatRequest = ChatRequest;
+export type OllamaChatResponse = ChatResponse;
+export type OllamaGenerateRequest = GenerateRequest;
+export type OllamaGenerateResponse = GenerateResponse;
+export type OllamaMessage = Message;
+export type OllamaOptions = Partial<Options>;
 export type OllamaRole = "system" | "user" | "assistant";

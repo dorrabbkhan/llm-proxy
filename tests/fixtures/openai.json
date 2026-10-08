@@ -1,0 +1,149 @@
+{
+  "requests": {
+    "basic": {
+      "model": "gpt-4",
+      "messages": [
+        { "role": "user", "content": "Hello" }
+      ]
+    },
+    "system": {
+      "model": "gpt-4",
+      "messages": [
+        { "role": "system", "content": "You are a helpful assistant" },
+        { "role": "user", "content": "Hello" }
+      ]
+    },
+    "params": {
+      "model": "gpt-4",
+      "messages": [
+        { "role": "user", "content": "Hello" }
+      ],
+      "temperature": 0.7,
+      "max_tokens": 150,
+      "top_p": 0.9,
+      "stop": ["END"],
+      "n": 2,
+      "seed": 42,
+      "presence_penalty": 0.1,
+      "frequency_penalty": 0.2
+    },
+    "multimodal": {
+      "model": "gpt-4o",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            { "type": "text", "text": "What is in this image?" },
+            {
+              "type": "image_url",
+              "image_url": { "url": "data:image/png;base64,aW1hZ2VkYXRh" }
+            }
+          ]
+        }
+      ]
+    },
+    "tools": {
+      "model": "gpt-4",
+      "messages": [
+        { "role": "user", "content": "What's the weather?" }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "description": "Get current weather",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "location": { "type": "string" }
+              },
+              "required": ["location"]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "responses": {
+    "basic": {
+      "id": "chatcmpl-abc123",
+      "object": "chat.completion",
+      "created": 1700000000,
+      "model": "gpt-4",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "Hello! How can I help you?",
+            "refusal": null
+          },
+          "finish_reason": "stop",
+          "logprobs": null
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 10,
+        "completion_tokens": 8,
+        "total_tokens": 18
+      }
+    },
+    "length": {
+      "id": "chatcmpl-def456",
+      "object": "chat.completion",
+      "created": 1700000000,
+      "model": "gpt-4",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "This response was truncated because it reached",
+            "refusal": null
+          },
+          "finish_reason": "length",
+          "logprobs": null
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 10,
+        "completion_tokens": 150,
+        "total_tokens": 160
+      }
+    },
+    "tool_call": {
+      "id": "chatcmpl-ghi789",
+      "object": "chat.completion",
+      "created": 1700000000,
+      "model": "gpt-4",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": null,
+            "refusal": null,
+            "tool_calls": [
+              {
+                "id": "call_xyz",
+                "type": "function",
+                "function": {
+                  "name": "get_weather",
+                  "arguments": "{\"location\":\"Paris\"}"
+                }
+              }
+            ]
+          },
+          "finish_reason": "tool_calls",
+          "logprobs": null
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 20,
+        "completion_tokens": 12,
+        "total_tokens": 32
+      }
+    }
+  }
+}

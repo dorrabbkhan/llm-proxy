@@ -1,0 +1,122 @@
+{
+  "requests": {
+    "basic": {
+      "contents": [
+        { "role": "user", "parts": [{ "text": "Hello" }] }
+      ]
+    },
+    "system": {
+      "contents": [
+        { "role": "user", "parts": [{ "text": "Hello" }] }
+      ],
+      "systemInstruction": {
+        "role": "user",
+        "parts": [{ "text": "You are a helpful assistant" }]
+      }
+    },
+    "params": {
+      "contents": [
+        { "role": "user", "parts": [{ "text": "Hello" }] }
+      ],
+      "generationConfig": {
+        "temperature": 0.7,
+        "maxOutputTokens": 150,
+        "topP": 0.9,
+        "topK": 40,
+        "stopSequences": ["END"],
+        "candidateCount": 2
+      }
+    },
+    "multimodal": {
+      "contents": [
+        {
+          "role": "user",
+          "parts": [
+            { "text": "What is in this image?" },
+            {
+              "inlineData": {
+                "mimeType": "image/png",
+                "data": "aW1hZ2VkYXRh"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "tools": {
+      "contents": [
+        { "role": "user", "parts": [{ "text": "What's the weather?" }] }
+      ],
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "name": "get_weather",
+              "description": "Get current weather",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "location": { "type": "string" }
+                },
+                "required": ["location"]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "responses": {
+    "basic": {
+      "candidates": [
+        {
+          "content": {
+            "role": "model",
+            "parts": [{ "text": "Hello! How can I help you?" }]
+          },
+          "finishReason": "STOP",
+          "index": 0
+        }
+      ],
+      "usageMetadata": {
+        "promptTokenCount": 10,
+        "candidatesTokenCount": 8,
+        "totalTokenCount": 18
+      }
+    },
+    "length": {
+      "candidates": [
+        {
+          "content": {
+            "role": "model",
+            "parts": [{ "text": "This response was truncated" }]
+          },
+          "finishReason": "MAX_TOKENS",
+          "index": 0
+        }
+      ],
+      "usageMetadata": {
+        "promptTokenCount": 10,
+        "candidatesTokenCount": 150,
+        "totalTokenCount": 160
+      }
+    },
+    "safety": {
+      "candidates": [
+        {
+          "content": {
+            "role": "model",
+            "parts": [{ "text": "" }]
+          },
+          "finishReason": "SAFETY",
+          "index": 0
+        }
+      ],
+      "usageMetadata": {
+        "promptTokenCount": 10,
+        "candidatesTokenCount": 0,
+        "totalTokenCount": 10
+      }
+    }
+  }
+}

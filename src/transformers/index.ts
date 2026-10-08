@@ -6,7 +6,7 @@ import type {
 } from "../types/canonical.types";
 
 // Re-export adapters
-export { adapters, type Provider } from "./adapters";
+export { adapters, PROVIDER_PATHS, type Provider } from "./adapters";
 export * from "../types/canonical.types";
 
 /**

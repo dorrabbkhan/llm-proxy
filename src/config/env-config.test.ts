@@ -7,7 +7,13 @@ describe("Environment Configuration", () => {
   beforeEach(() => {
     vi.resetModules();
     resetConfig();
-    process.env = { ...originalEnv };
+    process.env = {
+      ...originalEnv,
+      OPENAI_API_BASE_URL: "https://api.openai.com",
+      GEMINI_API_BASE_URL: "https://generativelanguage.googleapis.com",
+      OLLAMA_API_BASE_URL: "http://localhost:11434",
+      ANTHROPIC_API_BASE_URL: "https://api.anthropic.com",
+    };
   });
 
   afterEach(() => {
@@ -65,6 +71,7 @@ describe("Environment Configuration", () => {
     expect(config.targetApi).toBe("openai");
     expect(config.port).toBe(4000);
     expect(config.targetApiKey).toBe("test-openai-key");
+    expect(config.targetBaseUrl).toBe("https://api.openai.com");
   });
 
   it("should load config for gemini target", () => {
@@ -79,6 +86,9 @@ describe("Environment Configuration", () => {
     expect(config.targetApi).toBe("gemini");
     expect(config.port).toBe(4000);
     expect(config.targetApiKey).toBe("test-gemini-key");
+    expect(config.targetBaseUrl).toBe(
+      "https://generativelanguage.googleapis.com",
+    );
   });
 
   it("should load config for anthropic target", () => {
@@ -93,6 +103,7 @@ describe("Environment Configuration", () => {
     expect(config.targetApi).toBe("anthropic");
     expect(config.port).toBe(4000);
     expect(config.targetApiKey).toBe("test-anthropic-key");
+    expect(config.targetBaseUrl).toBe("https://api.anthropic.com");
   });
 
   it("should not require API key for ollama target", () => {
@@ -107,6 +118,7 @@ describe("Environment Configuration", () => {
     expect(config.targetApi).toBe("ollama");
     expect(config.port).toBe(4000);
     expect(config.targetApiKey).toBeUndefined();
+    expect(config.targetBaseUrl).toBe("http://localhost:11434");
   });
 
   it("should use default port when PORT is not set", () => {
@@ -128,5 +140,15 @@ describe("Environment Configuration", () => {
 
     expect(config.sourceApi).toBe("openai");
     expect(config.targetApi).toBe("gemini");
+  });
+
+  it("should throw error when target base URL is not set", () => {
+    process.env.SOURCE_API = "openai";
+    process.env.TARGET_API = "ollama";
+    unsetEnv("OLLAMA_API_BASE_URL");
+
+    expect(() => loadConfig()).toThrow(
+      "OLLAMA_API_BASE_URL environment variable is required",
+    );
   });
 });

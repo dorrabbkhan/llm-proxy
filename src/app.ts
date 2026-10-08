@@ -1,6 +1,7 @@
-import express from 'express';
-import { requestLogger } from './middleware/request-logger';
-import { errorHandler } from './middleware/error-handler';
+import express from "express";
+import { requestLogger } from "./middleware/request-logger";
+import { errorHandler } from "./middleware/error-handler";
+import { proxyRouter } from "./routes/proxy";
 
 const app = express();
 
@@ -11,13 +12,18 @@ app.use(requestLogger);
 app.use(express.json());
 
 // 3. Routes
-app.get('/health', (_req, res) => {
-  res.status(200).json({ status: 'ok' });
+app.get("/health", (_req, res) => {
+  res.status(200).json({ status: "ok" });
 });
+
+// 3a. Proxy routes - transforms and forwards LLM API requests
+app.use(proxyRouter);
 
 // 4. 404 handler - catch unmatched routes
 app.use((_req, res) => {
-  res.status(404).json({ error: { message: 'Not Found', code: 'NOT_FOUND', status: 404 } });
+  res
+    .status(404)
+    .json({ error: { message: "Not Found", code: "NOT_FOUND", status: 404 } });
 });
 
 // 5. Error handler - must be last

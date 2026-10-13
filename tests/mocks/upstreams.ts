@@ -1,17 +1,17 @@
-import { http, HttpResponse } from 'msw';
-import type { Provider } from '../../src/transformers';
+import { http, HttpResponse } from "msw";
+import type { Provider } from "../../src/transformers";
 
-import openaiFixtures from '../fixtures/openai.json';
-import geminiFixtures from '../fixtures/gemini.json';
-import ollamaFixtures from '../fixtures/ollama.json';
-import anthropicFixtures from '../fixtures/anthropic.json';
+import openaiFixtures from "../fixtures/openai.json";
+import geminiFixtures from "../fixtures/gemini.json";
+import ollamaFixtures from "../fixtures/ollama.json";
+import anthropicFixtures from "../fixtures/anthropic.json";
 
 /** Mock hostnames used as *_API_BASE_URL in tests */
 export const MOCK_BASE_URLS: Record<Provider, string> = {
-  openai: 'http://openai.mock',
-  gemini: 'http://gemini.mock',
-  ollama: 'http://ollama.mock',
-  anthropic: 'http://anthropic.mock',
+  openai: "http://openai.mock",
+  gemini: "http://gemini.mock",
+  ollama: "http://ollama.mock",
+  anthropic: "http://anthropic.mock",
 };
 
 /** Captured request bodies per provider (reset between tests) */
@@ -49,17 +49,20 @@ export function resetOverrides(): void {
 }
 
 export const upstreamHandlers = [
-  http.post(`${MOCK_BASE_URLS.openai}/v1/chat/completions`, async ({ request }) => {
-    capturedRequests.openai.push(await request.json());
-    capturedHeaders.openai.push(request.headers);
-    const override = responseOverrides.openai;
-    if (override) {
-      return HttpResponse.json(override.body ?? {}, {
-        status: override.status ?? 200,
-      });
-    }
-    return HttpResponse.json(openaiFixtures.responses.basic);
-  }),
+  http.post(
+    `${MOCK_BASE_URLS.openai}/v1/chat/completions`,
+    async ({ request }) => {
+      capturedRequests.openai.push(await request.json());
+      capturedHeaders.openai.push(request.headers);
+      const override = responseOverrides.openai;
+      if (override) {
+        return HttpResponse.json(override.body ?? {}, {
+          status: override.status ?? 200,
+        });
+      }
+      return HttpResponse.json(openaiFixtures.responses.basic);
+    },
+  ),
 
   http.post(`${MOCK_BASE_URLS.gemini}/v1beta/models/*`, async ({ request }) => {
     capturedRequests.gemini.push(await request.json());
@@ -95,5 +98,51 @@ export const upstreamHandlers = [
       });
     }
     return HttpResponse.json(anthropicFixtures.responses.basic);
+  }),
+
+  // ===== Model list endpoints =====
+
+  http.get(`${MOCK_BASE_URLS.openai}/v1/models`, ({ request }) => {
+    capturedHeaders.openai.push(request.headers);
+    const override = responseOverrides.openai;
+    if (override) {
+      return HttpResponse.json(override.body ?? {}, {
+        status: override.status ?? 200,
+      });
+    }
+    return HttpResponse.json(openaiFixtures.models);
+  }),
+
+  http.get(`${MOCK_BASE_URLS.gemini}/v1beta/models`, ({ request }) => {
+    capturedHeaders.gemini.push(request.headers);
+    const override = responseOverrides.gemini;
+    if (override) {
+      return HttpResponse.json(override.body ?? {}, {
+        status: override.status ?? 200,
+      });
+    }
+    return HttpResponse.json(geminiFixtures.models);
+  }),
+
+  http.get(`${MOCK_BASE_URLS.ollama}/api/tags`, ({ request }) => {
+    capturedHeaders.ollama.push(request.headers);
+    const override = responseOverrides.ollama;
+    if (override) {
+      return HttpResponse.json(override.body ?? {}, {
+        status: override.status ?? 200,
+      });
+    }
+    return HttpResponse.json(ollamaFixtures.models);
+  }),
+
+  http.get(`${MOCK_BASE_URLS.anthropic}/v1/models`, ({ request }) => {
+    capturedHeaders.anthropic.push(request.headers);
+    const override = responseOverrides.anthropic;
+    if (override) {
+      return HttpResponse.json(override.body ?? {}, {
+        status: override.status ?? 200,
+      });
+    }
+    return HttpResponse.json(anthropicFixtures.models);
   }),
 ];

@@ -52,6 +52,12 @@ export class UpstreamError extends ProxyError {
   }
 }
 
+export class AuthError extends ProxyError {
+  constructor(message: string, context?: Record<string, unknown>) {
+    super(message, 401, "UNAUTHORIZED", context);
+  }
+}
+
 export class ConfigurationError extends ProxyError {
   constructor(message: string, context?: Record<string, unknown>) {
     super(message, 500, "CONFIGURATION_ERROR", context);

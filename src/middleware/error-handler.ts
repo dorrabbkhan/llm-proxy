@@ -15,6 +15,18 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   const isProduction = process.env.NODE_ENV === "production";
   const requestId = req.id;
 
+  // body-parser errors arrive with a `type` field — map to a clean 4xx
+  if (err && err.type === "entity.too.large") {
+    res.status(413).json({
+      error: {
+        message: `Request body too large (limit: ${err.limit})`,
+        code: "PAYLOAD_TOO_LARGE",
+        status: 413,
+      },
+    });
+    return;
+  }
+
   if (err instanceof ProxyError) {
     logger.error(
       {

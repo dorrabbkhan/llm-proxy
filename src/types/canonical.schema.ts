@@ -1,17 +1,17 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 /**
  * Zod schemas mirroring canonical.types.ts.
  * Used for runtime contract validation of adapter outputs.
  */
 
-const roleSchema = z.enum(['system', 'user', 'assistant', 'tool']);
+const roleSchema = z.enum(["system", "user", "assistant", "tool"]);
 
 const mimeTypeSchema = z.enum([
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/webp',
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
 ]);
 
 const imageSchema = z.object({
@@ -21,17 +21,17 @@ const imageSchema = z.object({
 
 const contentPartSchema = z
   .object({
-    type: z.enum(['text', 'image']),
+    type: z.enum(["text", "image"]),
     text: z.string().optional(),
     image: imageSchema.optional(),
   })
-  .refine((p) => (p.type === 'text' ? p.text !== undefined : true), {
+  .refine((p) => (p.type === "text" ? p.text !== undefined : true), {
     message: "content part of type 'text' must have text",
   });
 
 const toolCallSchema = z.object({
   id: z.string(),
-  type: z.literal('function'),
+  type: z.literal("function"),
   function: z.object({
     name: z.string(),
     arguments: z.string(),
@@ -65,7 +65,7 @@ const functionSchema = z.object({
 });
 
 export const canonicalToolSchema = z.object({
-  type: z.literal('function'),
+  type: z.literal("function"),
   function: functionSchema,
 });
 
@@ -79,12 +79,12 @@ export const canonicalRequestSchema = z.object({
 });
 
 export const finishReasonSchema = z.enum([
-  'stop',
-  'length',
-  'tool_call',
-  'content_filter',
-  'error',
-  'unknown',
+  "stop",
+  "length",
+  "tool_call",
+  "content_filter",
+  "error",
+  "unknown",
 ]);
 
 export const canonicalUsageSchema = z.object({
@@ -106,10 +106,23 @@ export const canonicalStreamChunkSchema = z.object({
   id: z.string(),
   model: z.string(),
   delta: z.object({
-    role: z.literal('assistant').optional(),
+    role: z.literal("assistant").optional(),
     content: z.string().optional(),
     toolCalls: z.array(toolCallSchema.partial()).optional(),
   }),
   finishReason: finishReasonSchema.optional(),
   usage: canonicalUsageSchema.optional(),
+});
+
+// ============ MODEL LIST ============
+
+export const canonicalModelSchema = z.object({
+  id: z.string().min(1),
+  displayName: z.string().optional(),
+  created: z.number().optional(),
+  ownedBy: z.string().optional(),
+});
+
+export const canonicalModelListSchema = z.object({
+  models: z.array(canonicalModelSchema),
 });

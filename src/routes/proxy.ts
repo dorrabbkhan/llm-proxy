@@ -10,7 +10,12 @@ export const proxyRouter = Router();
 
 proxyRouter.use(async (req, res, next) => {
   try {
-    const result = await proxyRequest(req.path, req.body, String(req.id));
+    const result = await proxyRequest(
+      req.path,
+      req.method,
+      req.body,
+      String(req.id),
+    );
     if (!result) return next();
     res.status(200).json(result.body);
   } catch (err) {

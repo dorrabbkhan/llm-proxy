@@ -4,6 +4,7 @@ import type {
   CanonicalResponse,
   CanonicalMessage,
   CanonicalContentPart,
+  CanonicalModelList,
   ProviderAdapter,
 } from "../../types/canonical.types";
 import type {
@@ -20,6 +21,8 @@ export const ollamaAdapter: ProviderAdapter<
   fromCanonicalRequest,
   toCanonicalResponse,
   fromCanonicalResponse,
+  toCanonicalModelList,
+  fromCanonicalModelList,
 };
 
 // ============ REQUEST: Ollama → Canonical ============
@@ -206,4 +209,44 @@ export function fromCanonicalResponse(
     eval_count: response.usage?.outputTokens ?? 0,
     eval_duration: 0,
   } as OllamaChatResponse;
+}
+
+// ============ MODEL LIST (/api/tags) ============
+
+interface OllamaModelListResponse {
+  models?: {
+    name?: string;
+    model?: string;
+    modified_at?: string;
+    size?: number;
+  }[];
+}
+
+export function toCanonicalModelList(response: unknown): CanonicalModelList {
+  const res = response as OllamaModelListResponse;
+  return {
+    models: (res.models ?? [])
+      .filter((m) => Boolean(m.name ?? m.model))
+      .map((m) => ({
+        id: (m.name ?? m.model)!,
+        // ISO timestamp → Unix seconds
+        created: m.modified_at
+          ? Math.floor(Date.parse(m.modified_at) / 1000)
+          : undefined,
+      })),
+  };
+}
+
+export function fromCanonicalModelList(
+  list: CanonicalModelList,
+): OllamaModelListResponse {
+  return {
+    models: list.models.map((m) => ({
+      name: m.id,
+      model: m.id,
+      modified_at: m.created
+        ? new Date(m.created * 1000).toISOString()
+        : undefined,
+    })),
+  };
 }

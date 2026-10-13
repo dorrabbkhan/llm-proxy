@@ -13,6 +13,8 @@ export interface Config {
   targetBaseUrl: string;
   upstreamTimeoutMs: number;
   upstreamRetries: number;
+  /** Client-facing auth key — unset means auth disabled */
+  proxyApiKey?: string;
 }
 
 function isValidProvider(value: string): value is Provider {
@@ -84,6 +86,7 @@ export function loadConfig(): Config {
     upstreamRetries: process.env.UPSTREAM_RETRIES
       ? parseInt(process.env.UPSTREAM_RETRIES, 10)
       : 1,
+    proxyApiKey: process.env.PROXY_API_KEY || undefined,
   };
 }
 

@@ -6,6 +6,8 @@ declare global {
       TARGET_API?: string;
       UPSTREAM_TIMEOUT_MS?: string;
       UPSTREAM_RETRIES?: string;
+      PROXY_API_KEY?: string;
+      MAX_BODY_SIZE?: string;
       OPENAI_API_KEY?: string;
       OPENAI_API_BASE_URL?: string;
       GEMINI_API_KEY?: string;

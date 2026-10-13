@@ -24,7 +24,7 @@ export interface CanonicalRequest {
 
 export interface CanonicalMessage {
   /** Message role */
-  role: 'system' | 'user' | 'assistant' | 'tool';
+  role: "system" | "user" | "assistant" | "tool";
   /** Message content - string or multimodal parts */
   content: string | CanonicalContentPart[];
   /** Tool calls made by assistant */
@@ -37,7 +37,7 @@ export interface CanonicalMessage {
 
 export interface CanonicalContentPart {
   /** Content type */
-  type: 'text' | 'image';
+  type: "text" | "image";
   /** Text content (when type is 'text') */
   text?: string;
   /** Image content (when type is 'image') */
@@ -48,7 +48,7 @@ export interface CanonicalImage {
   /** Base64-encoded image data */
   data: string;
   /** MIME type (e.g., 'image/png', 'image/jpeg') */
-  mimeType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+  mimeType: "image/jpeg" | "image/png" | "image/gif" | "image/webp";
 }
 
 export interface CanonicalConfig {
@@ -76,7 +76,7 @@ export interface CanonicalConfig {
 
 export interface CanonicalTool {
   /** Tool type (currently only 'function' is widely supported) */
-  type: 'function';
+  type: "function";
   /** Function definition */
   function: CanonicalFunction;
 }
@@ -94,7 +94,7 @@ export interface CanonicalToolCall {
   /** Unique ID for this tool call */
   id: string;
   /** Tool type */
-  type: 'function';
+  type: "function";
   /** Function call details */
   function: {
     /** Function name */
@@ -105,10 +105,10 @@ export interface CanonicalToolCall {
 }
 
 export type CanonicalToolChoice =
-  | 'auto'
-  | 'none'
-  | 'required'
-  | { type: 'function'; function: { name: string } };
+  | "auto"
+  | "none"
+  | "required"
+  | { type: "function"; function: { name: string } };
 
 // ============ RESPONSE ============
 
@@ -128,12 +128,12 @@ export interface CanonicalResponse {
 }
 
 export type CanonicalFinishReason =
-  | 'stop'
-  | 'length'
-  | 'tool_call'
-  | 'content_filter'
-  | 'error'
-  | 'unknown';
+  | "stop"
+  | "length"
+  | "tool_call"
+  | "content_filter"
+  | "error"
+  | "unknown";
 
 export interface CanonicalUsage {
   /** Tokens in the prompt */
@@ -161,11 +161,28 @@ export interface CanonicalStreamChunk {
 
 export interface CanonicalDelta {
   /** Role (only on first chunk) */
-  role?: 'assistant';
+  role?: "assistant";
   /** Incremental text content */
   content?: string;
   /** Incremental tool calls */
   toolCalls?: Partial<CanonicalToolCall>[];
+}
+
+// ============ MODEL LIST ============
+
+export interface CanonicalModel {
+  /** Model identifier — passes through verbatim */
+  id: string;
+  /** Human-readable name, if the provider has one */
+  displayName?: string;
+  /** Creation/modification timestamp (Unix seconds) */
+  created?: number;
+  /** Owning organization */
+  ownedBy?: string;
+}
+
+export interface CanonicalModelList {
+  models: CanonicalModel[];
 }
 
 // ============ ADAPTER INTERFACE ============
@@ -179,4 +196,8 @@ export interface ProviderAdapter<TRequest, TResponse> {
   toCanonicalResponse(response: TResponse, model: string): CanonicalResponse;
   /** Convert canonical response to provider format */
   fromCanonicalResponse(response: CanonicalResponse): TResponse;
+  /** Convert provider model-list response to canonical format */
+  toCanonicalModelList(response: unknown): CanonicalModelList;
+  /** Convert canonical model list to provider format */
+  fromCanonicalModelList(models: CanonicalModelList): unknown;
 }

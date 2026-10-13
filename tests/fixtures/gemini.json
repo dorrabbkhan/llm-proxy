@@ -2,28 +2,55 @@
   "requests": {
     "basic": {
       "contents": [
-        { "role": "user", "parts": [{ "text": "Hello" }] }
+        {
+          "role": "user",
+          "parts": [
+            {
+              "text": "Hello"
+            }
+          ]
+        }
       ]
     },
     "system": {
       "contents": [
-        { "role": "user", "parts": [{ "text": "Hello" }] }
+        {
+          "role": "user",
+          "parts": [
+            {
+              "text": "Hello"
+            }
+          ]
+        }
       ],
       "systemInstruction": {
         "role": "user",
-        "parts": [{ "text": "You are a helpful assistant" }]
+        "parts": [
+          {
+            "text": "You are a helpful assistant"
+          }
+        ]
       }
     },
     "params": {
       "contents": [
-        { "role": "user", "parts": [{ "text": "Hello" }] }
+        {
+          "role": "user",
+          "parts": [
+            {
+              "text": "Hello"
+            }
+          ]
+        }
       ],
       "generationConfig": {
         "temperature": 0.7,
         "maxOutputTokens": 150,
         "topP": 0.9,
         "topK": 40,
-        "stopSequences": ["END"],
+        "stopSequences": [
+          "END"
+        ],
         "candidateCount": 2
       }
     },
@@ -32,7 +59,9 @@
         {
           "role": "user",
           "parts": [
-            { "text": "What is in this image?" },
+            {
+              "text": "What is in this image?"
+            },
             {
               "inlineData": {
                 "mimeType": "image/png",
@@ -45,7 +74,14 @@
     },
     "tools": {
       "contents": [
-        { "role": "user", "parts": [{ "text": "What's the weather?" }] }
+        {
+          "role": "user",
+          "parts": [
+            {
+              "text": "What's the weather?"
+            }
+          ]
+        }
       ],
       "tools": [
         {
@@ -56,9 +92,13 @@
               "parameters": {
                 "type": "object",
                 "properties": {
-                  "location": { "type": "string" }
+                  "location": {
+                    "type": "string"
+                  }
                 },
-                "required": ["location"]
+                "required": [
+                  "location"
+                ]
               }
             }
           ]
@@ -72,7 +112,11 @@
         {
           "content": {
             "role": "model",
-            "parts": [{ "text": "Hello! How can I help you?" }]
+            "parts": [
+              {
+                "text": "Hello! How can I help you?"
+              }
+            ]
           },
           "finishReason": "STOP",
           "index": 0
@@ -89,7 +133,11 @@
         {
           "content": {
             "role": "model",
-            "parts": [{ "text": "This response was truncated" }]
+            "parts": [
+              {
+                "text": "This response was truncated"
+              }
+            ]
           },
           "finishReason": "MAX_TOKENS",
           "index": 0
@@ -106,7 +154,11 @@
         {
           "content": {
             "role": "model",
-            "parts": [{ "text": "" }]
+            "parts": [
+              {
+                "text": ""
+              }
+            ]
           },
           "finishReason": "SAFETY",
           "index": 0
@@ -118,5 +170,17 @@
         "totalTokenCount": 10
       }
     }
+  },
+  "models": {
+    "models": [
+      {
+        "name": "models/gemini-2.0-flash",
+        "displayName": "Gemini 2.0 Flash"
+      },
+      {
+        "name": "models/gemini-1.5-pro",
+        "displayName": "Gemini 1.5 Pro"
+      }
+    ]
   }
 }

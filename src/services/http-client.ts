@@ -4,7 +4,7 @@ import { logger } from "../utils/logger";
 export interface UpstreamRequestOptions {
   url: string;
   headers: Record<string, string>;
-  body: unknown;
+  body?: unknown;
   timeoutMs?: number;
   retries?: number;
   requestId?: string;
@@ -39,15 +39,18 @@ function isAbortError(err: unknown): boolean {
 }
 
 /**
- * POST JSON to an upstream provider with timeout + conservative retry.
+ * Send a JSON request to an upstream provider with timeout + conservative
+ * retry. postJson/getJson are thin wrappers.
  *
  * Retry policy: LLM POSTs aren't idempotent — retrying a request the
  * upstream may have already processed can double-bill tokens. So we only
  * retry transport failures (connection refused, DNS, socket reset) and
  * 429/503 where the upstream rejected before processing. Never retry other
- * statuses or timeouts (a partial generation may have run).
+ * statuses or timeouts (a partial generation may have run). GETs are
+ * idempotent but follow the same policy for simplicity.
  */
-export async function postJson(
+export async function requestJson(
+  method: "GET" | "POST",
   opts: UpstreamRequestOptions,
 ): Promise<UpstreamResponse> {
   const {
@@ -66,13 +69,13 @@ export async function postJson(
     const start = Date.now();
     try {
       const res = await fetch(url, {
-        method: "POST",
+        method,
         headers: {
           "Content-Type": "application/json",
           ...headers,
           ...(requestId ? { "x-request-id": requestId } : {}),
         },
-        body: JSON.stringify(body),
+        ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
         signal: AbortSignal.timeout(timeoutMs),
       });
 
@@ -135,4 +138,16 @@ export async function postJson(
   }
 
   throw lastError ?? new UpstreamError("Upstream request failed");
+}
+
+export function postJson(
+  opts: UpstreamRequestOptions,
+): Promise<UpstreamResponse> {
+  return requestJson("POST", opts);
+}
+
+export function getJson(
+  opts: UpstreamRequestOptions,
+): Promise<UpstreamResponse> {
+  return requestJson("GET", opts);
 }

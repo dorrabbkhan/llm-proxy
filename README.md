@@ -40,6 +40,18 @@ The actual request flow:
    endpoint, with the right auth headers.
 5. The response comes back through the same path in reverse.
 
+Two endpoint kinds are supported:
+
+- **Chat** — the request/response translation described above (OpenAI
+  `/v1/chat/completions`, Gemini `/v1beta/models/{m}:generateContent`,
+  Ollama `/api/chat`, Anthropic `/v1/messages`).
+- **Model list** — GET endpoints (`/v1/models`, `/v1beta/models`,
+  `/api/tags`) transform the upstream catalog into the source format,
+  so client SDKs and dropdowns work unchanged.
+
+Every completed request logs token usage (`inputTokens`, `outputTokens`,
+`finishReason`, upstream latency) via pino — grep for `"Request completed"`.
+
 ## Quick start
 
 ```bash
@@ -74,11 +86,16 @@ pair; run multiple instances for more.
 | `PORT`                    | Listen port (default `3000`)                                                                 |
 | `{PROVIDER}_API_BASE_URL` | Upstream base URL for the target provider, e.g. `OLLAMA_API_BASE_URL=http://localhost:11434` |
 | `{PROVIDER}_API_KEY`      | API key for the target provider (Ollama doesn't need one)                                    |
+| `UPSTREAM_TIMEOUT_MS`     | Per-request upstream timeout (default `30000`)                                               |
+| `UPSTREAM_RETRIES`        | Retries for transport failures / 429 / 503 (default `1`)                                     |
+| `MAX_BODY_SIZE`           | JSON body limit (default `10mb` — base64 images need it)                                     |
+| `PROXY_API_KEY`           | Optional client auth — when set, callers send `Authorization: Bearer <key>`                  |
 
 Routing and upstream endpoints are conventions, not configuration: each
-provider's `pathPrefix` and `requestPath` live in `PROVIDER_PATHS` in
-`src/transformers/adapters/index.ts`. There used to be a YAML mappings file
-here — it got deleted because it only ever repeated these conventions.
+provider's routes (`kind`, `method`, `pathPrefix`, `requestPath`) live in
+`PROVIDER_ROUTES` in `src/transformers/adapters/index.ts`. There used to be
+a YAML mappings file here — it got deleted because it only ever repeated
+these conventions.
 
 ## Project structure
 
@@ -88,10 +105,13 @@ src/
 ├── index.ts                Server startup
 ├── config/env-config.ts    Env var config (lazy, validated)
 ├── middleware/             pino request logging, error handler
-├── routes/proxy.ts         The actual proxy handler
+├── routes/proxy.ts         Thin HTTP adapter — delegates to proxy.service
+├── services/
+│   ├── http-client.ts      Upstream transport: timeout, retry, logging
+│   └── proxy.service.ts    Orchestration: validate → transform → forward
 ├── transformers/
 │   ├── index.ts            transformRequest/transformResponse entry points
-│   └── adapters/           One file per provider + PROVIDER_PATHS registry
+│   └── adapters/           One file per provider + PROVIDER_ROUTES registry
 ├── types/
 │   ├── canonical.types.ts  The canonical format
 │   ├── canonical.schema.ts Zod schemas for runtime validation
@@ -105,7 +125,7 @@ src/
 npm test
 ```
 
-~260 tests, all fast. Layers:
+~315 tests, all fast. Layers:
 
 - **Adapter unit tests** (`src/transformers/adapters/*.test.ts`) — each
   adapter's to/from canonical functions.
@@ -115,8 +135,9 @@ npm test
   pairs through the full transform to prove they compose.
 - **HTTP integration tests** (`tests/integration/`) — real requests against
   the Express app via supertest, with upstream providers mocked by msw. No
-  actual network calls happen. `pairs.test.ts` generates one end-to-end test
-  per provider pair, so all 16 combinations get exercised.
+  actual network calls happen. `pairs.test.ts` generates end-to-end tests
+  per provider pair — chat and model list, so all 16 combinations get
+  exercised twice.
 
 The contract tests are what make the adapter approach hold up: you don't need
 N×N tests if every adapter produces schema-valid canonical data, because then
@@ -126,9 +147,11 @@ any pair composes by construction.
 
 1. Create `src/transformers/adapters/newprovider.adapter.ts` implementing the
    `ProviderAdapter` interface (`toCanonicalRequest`, `fromCanonicalRequest`,
-   `toCanonicalResponse`, `fromCanonicalResponse`).
-2. Register it in `adapters` and add its `pathPrefix`/`requestPath` to
-   `PROVIDER_PATHS` in `src/transformers/adapters/index.ts`.
+   `toCanonicalResponse`, `fromCanonicalResponse`, `toCanonicalModelList`,
+   `fromCanonicalModelList`).
+2. Register it in `adapters` and add its routes (`kind`, `method`,
+   `pathPrefix`, `requestPath`) to `PROVIDER_ROUTES` in
+   `src/transformers/adapters/index.ts`.
 3. Add it to `VALID_PROVIDERS` in `src/config/env-config.ts` and extend
    `environment.d.ts` with its `*_API_KEY` / `*_API_BASE_URL` vars.
 4. Add fixtures in `tests/fixtures/` — the contract and pair tests pick them
@@ -144,6 +167,38 @@ any pair composes by construction.
   expressible across providers.
 - One source→target pair per instance. That's a deliberate simplification,
   not an oversight.
+
+## TODO / future features
+
+Roughly in priority order:
+
+- **Streaming transforms.** Canonical stream chunks already exist
+  (`CanonicalStreamChunk`) — need SSE piping per adapter pair. The highest
+  value missing feature.
+- **Embeddings endpoint.** `/v1/embeddings` ↔ Gemini `embedContent` ↔
+  Ollama `/api/embed`. Needs a second canonical pair plus a `501
+NOT_SUPPORTED` pattern, since Anthropic has no embeddings API.
+- **Prove the recipe with a 5th provider.** Qwen/DashScope native adapter —
+  validates the "adding a provider costs one file" promise and exercises
+  the fixture-driven test machinery.
+- **Multiple source→target pairs per instance.** Path- or
+  header-based routing instead of the single SOURCE_API/TARGET_API pair.
+- **Rate limiting + CORS/helmet.** Deliberately omitted so far — add when
+  the proxy is exposed beyond a trusted network (client auth via
+  `PROXY_API_KEY` already covers the basic case).
+- **Per-request metrics.** Token usage is logged per request; aggregating
+  into counters/histograms (e.g. Prometheus `/metrics`) is a natural next
+  step.
+
+## Docker
+
+```bash
+docker build -t llm-proxy .
+docker run -p 3000:3000 --env-file .env llm-proxy
+```
+
+Multi-stage build: provider SDKs are `devDependencies` (type-only imports),
+so the runtime image only ships express/pino/zod/dotenv plus `dist/`.
 
 ## Stack
 

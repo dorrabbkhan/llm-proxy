@@ -3,25 +3,39 @@
     "basic": {
       "model": "gpt-4",
       "messages": [
-        { "role": "user", "content": "Hello" }
+        {
+          "role": "user",
+          "content": "Hello"
+        }
       ]
     },
     "system": {
       "model": "gpt-4",
       "messages": [
-        { "role": "system", "content": "You are a helpful assistant" },
-        { "role": "user", "content": "Hello" }
+        {
+          "role": "system",
+          "content": "You are a helpful assistant"
+        },
+        {
+          "role": "user",
+          "content": "Hello"
+        }
       ]
     },
     "params": {
       "model": "gpt-4",
       "messages": [
-        { "role": "user", "content": "Hello" }
+        {
+          "role": "user",
+          "content": "Hello"
+        }
       ],
       "temperature": 0.7,
       "max_tokens": 150,
       "top_p": 0.9,
-      "stop": ["END"],
+      "stop": [
+        "END"
+      ],
       "n": 2,
       "seed": 42,
       "presence_penalty": 0.1,
@@ -33,10 +47,15 @@
         {
           "role": "user",
           "content": [
-            { "type": "text", "text": "What is in this image?" },
+            {
+              "type": "text",
+              "text": "What is in this image?"
+            },
             {
               "type": "image_url",
-              "image_url": { "url": "data:image/png;base64,aW1hZ2VkYXRh" }
+              "image_url": {
+                "url": "data:image/png;base64,aW1hZ2VkYXRh"
+              }
             }
           ]
         }
@@ -45,7 +64,10 @@
     "tools": {
       "model": "gpt-4",
       "messages": [
-        { "role": "user", "content": "What's the weather?" }
+        {
+          "role": "user",
+          "content": "What's the weather?"
+        }
       ],
       "tools": [
         {
@@ -56,9 +78,13 @@
             "parameters": {
               "type": "object",
               "properties": {
-                "location": { "type": "string" }
+                "location": {
+                  "type": "string"
+                }
               },
-              "required": ["location"]
+              "required": [
+                "location"
+              ]
             }
           }
         }
@@ -145,5 +171,22 @@
         "total_tokens": 32
       }
     }
+  },
+  "models": {
+    "object": "list",
+    "data": [
+      {
+        "id": "gpt-4o",
+        "object": "model",
+        "created": 1687682411,
+        "owned_by": "system"
+      },
+      {
+        "id": "gpt-4o-mini",
+        "object": "model",
+        "created": 1690000000,
+        "owned_by": "system"
+      }
+    ]
   }
 }

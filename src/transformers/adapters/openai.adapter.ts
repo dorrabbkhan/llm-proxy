@@ -6,6 +6,7 @@ import type {
   CanonicalContentPart,
   CanonicalImage,
   CanonicalToolCall,
+  CanonicalModelList,
   ProviderAdapter,
 } from "../../types/canonical.types";
 import type {
@@ -22,6 +23,8 @@ export const openaiAdapter: ProviderAdapter<
   fromCanonicalRequest,
   toCanonicalResponse,
   fromCanonicalResponse,
+  toCanonicalModelList,
+  fromCanonicalModelList,
 };
 
 // ============ REQUEST: OpenAI → Canonical ============
@@ -380,6 +383,42 @@ export function fromCanonicalResponse(
           total_tokens: response.usage.totalTokens,
         }
       : undefined,
+  };
+}
+
+// ============ MODEL LIST ============
+
+interface OpenAIModelListResponse {
+  object?: string;
+  data?: { id?: string; created?: number; owned_by?: string }[];
+}
+
+export function toCanonicalModelList(response: unknown): CanonicalModelList {
+  const res = response as OpenAIModelListResponse;
+  return {
+    models: (res.data ?? [])
+      .filter((m): m is { id: string; created?: number; owned_by?: string } =>
+        Boolean(m.id),
+      )
+      .map((m) => ({
+        id: m.id,
+        created: m.created,
+        ownedBy: m.owned_by,
+      })),
+  };
+}
+
+export function fromCanonicalModelList(
+  list: CanonicalModelList,
+): OpenAIModelListResponse {
+  return {
+    object: "list",
+    data: list.models.map((m) => ({
+      id: m.id,
+      object: "model",
+      created: m.created ?? 0,
+      owned_by: m.ownedBy ?? "llm-proxy",
+    })),
   };
 }
 

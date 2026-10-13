@@ -1,21 +1,65 @@
-import { describe, it, expect } from 'vitest';
-import request from 'supertest';
-import { app } from './app';
+import { describe, it, expect, vi } from "vitest";
+import request from "supertest";
+import { app } from "./app";
 
-describe('app', () => {
-  describe('GET /health', () => {
-    it('should return 200 with status ok', async () => {
-      const res = await request(app).get('/health');
+describe("app", () => {
+  it("returns 413 for bodies over MAX_BODY_SIZE", async () => {
+    vi.stubEnv("MAX_BODY_SIZE", "1kb");
+    vi.resetModules();
+    const { app: limitedApp } = await import("./app");
+
+    const res = await request(limitedApp)
+      .post("/v1/chat/completions")
+      .send({ data: "x".repeat(2000) });
+
+    expect(res.status).toBe(413);
+    expect(res.body.error.code).toBe("PAYLOAD_TOO_LARGE");
+    vi.unstubAllEnvs();
+  });
+  describe("PROXY_API_KEY auth", () => {
+    it("rejects proxy requests with 401 when key is set and missing/wrong", async () => {
+      vi.stubEnv("PROXY_API_KEY", "test-proxy-key");
+      vi.resetModules();
+      const { app: authedApp } = await import("./app");
+
+      const noHeader = await request(authedApp)
+        .post("/v1/chat/completions")
+        .send({});
+      expect(noHeader.status).toBe(401);
+      expect(noHeader.body.error.code).toBe("UNAUTHORIZED");
+
+      const wrongKey = await request(authedApp)
+        .post("/v1/chat/completions")
+        .set("Authorization", "Bearer nope")
+        .send({});
+      expect(wrongKey.status).toBe(401);
+      vi.unstubAllEnvs();
+    });
+
+    it("keeps /health open even when PROXY_API_KEY is set", async () => {
+      vi.stubEnv("PROXY_API_KEY", "test-proxy-key");
+      vi.resetModules();
+      const { app: authedApp } = await import("./app");
+
+      const res = await request(authedApp).get("/health");
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ status: 'ok' });
+      vi.unstubAllEnvs();
     });
   });
 
-  describe('404 handler', () => {
-    it('should return 404 for unknown routes', async () => {
-      const res = await request(app).get('/unknown-route');
+  describe("GET /health", () => {
+    it("should return 200 with status ok", async () => {
+      const res = await request(app).get("/health");
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ status: "ok" });
+    });
+  });
+
+  describe("404 handler", () => {
+    it("should return 404 for unknown routes", async () => {
+      const res = await request(app).get("/unknown-route");
       expect(res.status).toBe(404);
-      expect(res.body.error.code).toBe('NOT_FOUND');
+      expect(res.body.error.code).toBe("NOT_FOUND");
     });
   });
 });

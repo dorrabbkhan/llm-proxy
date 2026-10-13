@@ -3,27 +3,41 @@
     "basic": {
       "model": "llama3",
       "messages": [
-        { "role": "user", "content": "Hello" }
+        {
+          "role": "user",
+          "content": "Hello"
+        }
       ]
     },
     "system": {
       "model": "llama3",
       "messages": [
-        { "role": "system", "content": "You are a helpful assistant" },
-        { "role": "user", "content": "Hello" }
+        {
+          "role": "system",
+          "content": "You are a helpful assistant"
+        },
+        {
+          "role": "user",
+          "content": "Hello"
+        }
       ]
     },
     "params": {
       "model": "llama3",
       "messages": [
-        { "role": "user", "content": "Hello" }
+        {
+          "role": "user",
+          "content": "Hello"
+        }
       ],
       "options": {
         "temperature": 0.7,
         "num_predict": 150,
         "top_p": 0.9,
         "top_k": 40,
-        "stop": ["END"],
+        "stop": [
+          "END"
+        ],
         "seed": 42
       }
     },
@@ -33,14 +47,19 @@
         {
           "role": "user",
           "content": "What is in this image?",
-          "images": ["aW1hZ2VkYXRh"]
+          "images": [
+            "aW1hZ2VkYXRh"
+          ]
         }
       ]
     },
     "stream": {
       "model": "llama3",
       "messages": [
-        { "role": "user", "content": "Hello" }
+        {
+          "role": "user",
+          "content": "Hello"
+        }
       ],
       "stream": true
     }
@@ -78,5 +97,21 @@
       "eval_count": 150,
       "eval_duration": 1550000
     }
+  },
+  "models": {
+    "models": [
+      {
+        "name": "llama3:latest",
+        "model": "llama3:latest",
+        "modified_at": "2025-01-01T00:00:00Z",
+        "size": 4661224676
+      },
+      {
+        "name": "mistral:latest",
+        "model": "mistral:latest",
+        "modified_at": "2025-01-02T00:00:00Z",
+        "size": 4109865159
+      }
+    ]
   }
 }

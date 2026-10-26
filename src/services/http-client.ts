@@ -123,7 +123,15 @@ export async function requestJson(
           `Upstream returned a non-JSON response (content-type: ${contentType})`,
           res.status,
           undefined,
-          { requestId, url, bodyPreview: text.slice(0, 200) },
+          {
+            requestId,
+            url,
+            // error-handler logs err.context in every environment, so the
+            // body preview (completion text for NDJSON) is dev-only
+            ...(process.env.NODE_ENV !== "production"
+              ? { bodyPreview: text.slice(0, 200) }
+              : {}),
+          },
         );
       }
 

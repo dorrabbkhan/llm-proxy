@@ -82,3 +82,6 @@ One entry per decision or per task that deviated from the plan or spec. Newest a
   - Wire-format evidence: Ollama `/api/chat` defaults `stream` to `true`
     (ollama.com api docs, confirmed live in Task 1's NDJSON failures); Gemini selects streaming by
     endpoint (`:streamGenerateContent`), not a body field.
+  - `bodyPreview` on the non-JSON-2xx `UpstreamError` is attached only outside production because
+    error-handler logs `err.context` in all environments; whether a non-production preview should
+    exist at all is left to the owner (spec §3.1 vs Global Constraints privacy).

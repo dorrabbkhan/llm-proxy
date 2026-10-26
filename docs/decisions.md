@@ -34,3 +34,24 @@ One entry per decision or per task that deviated from the plan or spec. Newest a
   (spends paid API credit).
 - No CI exists until v1.0.1; until then the conductor's "wait for green" falls back to the local
   `./scripts/check.sh`.
+
+## v1.0.1 Task 1: live smoke suite — E1 and E10 confirmed live
+
+- `npm run test:live` run 2026-10-27 against a real Ollama (`ollama version is 0.40.11`,
+  `qwen3:0.6b` pulled). The run reached Ollama at `localhost:11434` through the host HTTP proxy
+  (`NODE_USE_ENV_PROXY=1`, `no_proxy` cleared) because the agent sandbox cannot bind to host
+  localhost directly — no code or config changes for that, it's an artefact of the dev environment.
+- Result: 8 tests, **4 failed (chat round trips), 4 passed (model lists)** — the expected pre-fix
+  state.
+- **E1 confirmed:** `openai`/`anthropic`/`ollama` source → `ollama` chat each failed
+  `500 TRANSFORM_ERROR` "Cannot read properties of null (reading 'message')": the adapter omits
+  `stream`, Ollama replies with NDJSON, `res.json()` yields `null`, `toCanonicalResponse` crashes.
+- **E10 confirmed:** `gemini` source → `ollama` chat failed `502` with upstream
+  `404 model 'gemini-pro' not found`: the path's model is ignored and the adapter hard-codes
+  `gemini-pro`.
+- Model lists pass in every source dialect and `LIVE_OLLAMA_MODEL` (`qwen3:0.6b`) is among the ids.
+- Resolved ambiguities (not in the plan): cheap default live models for opt-in paid targets
+  (`gpt-4o-mini`, `gemini-2.0-flash`, `claude-3-5-haiku-latest`); OpenAI live requests use
+  `max_tokens: 16` (still accepted by gpt-4o-mini and by more OpenAI-compatible gateways than
+  `max_completion_tokens`); `useTarget` keeps a pre-set `<TARGET>_API_BASE_URL` so a gateway
+  endpoint can be injected via env.

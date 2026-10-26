@@ -59,8 +59,10 @@ export function toCanonicalRequest(
     };
   }
 
-  if (request.stream !== undefined) {
-    result.stream = request.stream;
+  // Canonical treats absent and stream:false identically — only an
+  // explicit true survives, keeping the request round-trip idempotent.
+  if (request.stream === true) {
+    result.stream = true;
   }
 
   return result;
@@ -125,9 +127,9 @@ export function fromCanonicalRequest(
     }
   }
 
-  if (request.stream !== undefined) {
-    result.stream = request.stream;
-  }
+  // Ollama streams NDJSON by default; send stream:false unless the
+  // canonical request explicitly asked for streaming.
+  result.stream = request.stream ?? false;
 
   return result;
 }

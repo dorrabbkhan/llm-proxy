@@ -7,6 +7,7 @@ import {
   afterEach,
   afterAll,
 } from "vitest";
+import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import request from "supertest";
 import { app } from "../../src/app";
@@ -152,6 +153,28 @@ describe("Proxy integration: OpenAI → Gemini", () => {
     // system message filtered from contents
     expect(upstreamBody.contents).toHaveLength(1);
   });
+
+  it("openai → gemini uses canonical model in the upstream URL", async () => {
+    let seenUrl = "";
+    server.use(
+      http.post(
+        `${MOCK_BASE_URLS.gemini}/v1beta/models/*`,
+        ({ request: req }) => {
+          seenUrl = req.url;
+          return HttpResponse.json(geminiFixtures.responses.basic);
+        },
+      ),
+    );
+
+    await request(app)
+      .post("/v1/chat/completions")
+      .send(openaiFixtures.requests.basic)
+      .expect(200);
+
+    expect(seenUrl).toBe(
+      `${MOCK_BASE_URLS.gemini}/v1beta/models/gpt-4:generateContent`,
+    );
+  });
 });
 
 describe("Proxy integration: OpenAI → Anthropic", () => {
@@ -207,6 +230,25 @@ describe("Proxy integration: OpenAI → Anthropic", () => {
     expect(
       upstreamBody.messages.find((m) => m.role === "system"),
     ).toBeUndefined();
+  });
+});
+
+describe("Proxy integration: Gemini → Ollama", () => {
+  beforeEach(() => {
+    process.env.SOURCE_API = "gemini";
+    process.env.TARGET_API = "ollama";
+    resetConfig();
+  });
+
+  it("gemini → ollama sends the model named in the path", async () => {
+    await request(app)
+      .post("/v1beta/models/llama3:generateContent")
+      .send(geminiFixtures.requests.basic)
+      .expect(200);
+
+    expect(capturedRequests.ollama).toHaveLength(1);
+    const upstreamBody = capturedRequests.ollama[0] as { model: string };
+    expect(upstreamBody.model).toBe("llama3");
   });
 });
 

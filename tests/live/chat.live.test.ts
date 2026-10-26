@@ -34,7 +34,18 @@ describe.each(liveTargets().map((target) => ({ target })))(
       async ({ source, target }) => {
         useTarget(source, target);
 
-        const call = chatCall(source, liveModel(target));
+        // The ≤16 cap exists to keep paid calls cheap; the local Ollama
+        // target is free, and a thinking model needs room to finish
+        // reasoning before it emits content, so give those sources a
+        // larger budget for this target only.
+        const call = chatCall(
+          source,
+          liveModel(target),
+          target === 'ollama' &&
+            (source === 'openai' || source === 'anthropic')
+            ? { max_tokens: 512 }
+            : {},
+        );
         const res = await request(app).post(call.path).send(call.body);
 
         expect(res.status, JSON.stringify(res.body)).toBe(200);

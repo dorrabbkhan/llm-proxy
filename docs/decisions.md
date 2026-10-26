@@ -55,3 +55,33 @@ One entry per decision or per task that deviated from the plan or spec. Newest a
   `max_tokens: 16` (still accepted by gpt-4o-mini and by more OpenAI-compatible gateways than
   `max_completion_tokens`); `useTarget` keeps a pre-set `<TARGET>_API_BASE_URL` so a gateway
   endpoint can be injected via env.
+
+## v1.0.1 Task 2: Ollama `stream: false`, strict 2xx JSON, Gemini model from path
+
+- Live run (`npm run test:live`, 2026-10-27, Ollama 0.40.11, `qwen3:0.6b`, via the host HTTP proxy with
+  `NODE_USE_ENV_PROXY=1` and `no_proxy` cleared — same sandbox constraint as Task 1, no code changes for
+  it): **8/8 pass** — all four source-format chat round trips and all four model lists against `ollama`.
+- **Files outside the Files block:**
+  - `src/transformers/adapters/index.test.ts` (new): the task's Files block named no home for the
+    `PROVIDER_ROUTES`/`modelFromPath` tests or the per-adapter "request without stream sends no streaming
+    flag" tests (openai/anthropic/gemini), so they live beside the code they cover.
+  - `tests/live/chat.live.test.ts`: live-run finding the suite exists to catch — `qwen3:0.6b` is a
+    thinking model; its `thinking` output consumed the whole 16-token budget (`num_predict`), leaving
+    `message.content` empty for the openai/anthropic sources (verified directly: `num_predict` 16/64/128
+    → `content: ""`, `done_reason: length`; 256 → `"Yes"`). The suite now passes `max_tokens: 512` via
+    `chatCall`'s `extra` **only for `target === 'ollama'`** (free, local). The spec §3.5 `max_tokens ≤ 16`
+    cap is scoped to paid-provider calls and is unchanged for paid targets.
+- Deviations and notes:
+  - `ollama.toCanonicalRequest` now maps `stream: false` → absent (only `stream === true` survives).
+    Required for the contract round-trip idempotency check once `fromCanonicalRequest` emits
+    `stream: false` by default; canonical treats absent and `false` identically (§3.2 checks `=== true`).
+  - `http-client.requestJson` rethrows its own `UpstreamError`s inside the attempt loop so the new
+    non-JSON-2xx error (and the retries-exhausted 429/503 error) propagates instead of being rewrapped as
+    `Upstream unreachable`; this preserves the message and `upstreamStatus`.
+  - `UpstreamResponse` gained `contentType` per Interfaces → Produces.
+  - Wire-format evidence: Ollama `/api/chat` defaults `stream` to `true`
+    (ollama.com api docs, confirmed live in Task 1's NDJSON failures); Gemini selects streaming by
+    endpoint (`:streamGenerateContent`), not a body field.
+  - `bodyPreview` on the non-JSON-2xx `UpstreamError` is attached only outside production because
+    error-handler logs `err.context` in all environments; whether a non-production preview should
+    exist at all is left to the owner (spec §3.1 vs Global Constraints privacy).

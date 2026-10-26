@@ -24,6 +24,8 @@ export interface ProviderRoute {
   pathPrefix: string;
   /** Upstream endpoint path (model only used by gemini chat) */
   requestPath: (model?: string) => string;
+  /** Model id carried in the incoming path (gemini chat only) */
+  modelFromPath?: (path: string) => string | undefined;
 }
 
 /**
@@ -51,6 +53,21 @@ export const PROVIDER_ROUTES: Record<Provider, ProviderRoute[]> = {
       method: "POST",
       pathPrefix: "/v1beta/models",
       requestPath: (model) => `/v1beta/models/${model}:generateContent`,
+      modelFromPath: (path) => {
+        // The method suffix is ":"-separated; the model id itself may be
+        // percent-encoded and may contain "/" (e.g. tunedModels/x).
+        let decoded = path;
+        try {
+          decoded = decodeURIComponent(path);
+        } catch {
+          // malformed escapes — fall back to the raw path
+        }
+        const prefix = "/v1beta/models/";
+        if (!decoded.startsWith(prefix)) return undefined;
+        const rest = decoded.slice(prefix.length);
+        const colon = rest.lastIndexOf(":");
+        return colon === -1 ? undefined : rest.slice(0, colon);
+      },
     },
     {
       kind: "models",

@@ -101,6 +101,43 @@ describe('postJson', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('2xx non-JSON body throws UpstreamError 502 naming the content type', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response('{"a":1}\n{"b":2}\n', {
+          status: 200,
+          headers: { 'Content-Type': 'application/x-ndjson' },
+        })
+      )
+    );
+
+    const err = await postJson({ ...OPTS, retries: 0 }).catch((e) => e);
+
+    expect(err).toBeInstanceOf(UpstreamError);
+    expect(err.statusCode).toBe(502);
+    expect(err.message).toBe(
+      'Upstream returned a non-JSON response (content-type: application/x-ndjson)'
+    );
+  });
+
+  it('non-2xx non-JSON body returns body null', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response('<html>Bad Gateway</html>', {
+          status: 500,
+          headers: { 'Content-Type': 'text/html' },
+        })
+      )
+    );
+
+    const res = await postJson({ ...OPTS, retries: 0 });
+
+    expect(res.status).toBe(500);
+    expect(res.body).toBeNull();
+  });
+
   it('non-JSON body returns null body with status preserved', async () => {
     vi.stubGlobal(
       'fetch',

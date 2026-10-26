@@ -105,12 +105,13 @@ export async function proxyRequest(
     });
   }
 
+  // The model comes from the source path when the provider puts it there
+  // (Gemini), otherwise from the canonical request.
+  const model = route.modelFromPath?.(path) ?? parsed.data.model;
+  parsed.data.model = model;
+
   const targetBody = adapters[targetApi].fromCanonicalRequest(parsed.data);
 
-  const model =
-    typeof (body as Record<string, unknown>)?.model === "string"
-      ? ((body as Record<string, unknown>).model as string)
-      : "default";
   const targetRoute = PROVIDER_ROUTES[targetApi].find(
     (r) => r.kind === "chat",
   )!;

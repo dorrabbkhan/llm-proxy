@@ -156,6 +156,27 @@ describe("proxyRequest", () => {
     );
   });
 
+  it("gemini source takes the model from the request path", async () => {
+    process.env.SOURCE_API = "gemini";
+    resetConfig();
+
+    await proxyRequest(
+      "/v1beta/models/llama3:generateContent",
+      "POST",
+      {
+        contents: [{ role: "user", parts: [{ text: "Hello" }] }],
+      },
+      "r1",
+    );
+
+    expect(mockPostJson).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: "http://ollama.test/api/chat",
+        body: expect.objectContaining({ model: "llama3" }),
+      }),
+    );
+  });
+
   it("returns transformed response in source format", async () => {
     const result = await proxyRequest(
       "/v1/chat/completions",

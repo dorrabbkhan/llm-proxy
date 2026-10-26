@@ -14,6 +14,7 @@ export interface UpstreamResponse {
   status: number;
   body: unknown;
   durationMs: number;
+  contentType?: string;
 }
 
 /** Retry only these upstream statuses — upstream rejected before processing */
@@ -80,7 +81,15 @@ export async function requestJson(
       });
 
       const durationMs = Date.now() - start;
-      const parsed = await res.json().catch(() => null);
+      const contentType = res.headers.get("content-type") ?? "unknown";
+      const text = await res.text();
+      let parsed: unknown = null;
+      let parseFailed = false;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        parseFailed = true;
+      }
 
       logger.info(
         {
@@ -107,8 +116,27 @@ export async function requestJson(
         );
       }
 
-      return { status: res.status, body: parsed, durationMs };
+      // A 2xx that isn't valid JSON is an upstream failure (e.g. Ollama
+      // answering with NDJSON), not a successful empty response.
+      if (res.ok && parseFailed) {
+        throw new UpstreamError(
+          `Upstream returned a non-JSON response (content-type: ${contentType})`,
+          res.status,
+          undefined,
+          { requestId, url, bodyPreview: text.slice(0, 200) },
+        );
+      }
+
+      return {
+        status: res.status,
+        body: parseFailed ? null : parsed,
+        durationMs,
+        contentType,
+      };
     } catch (err) {
+      // Our own UpstreamErrors (non-JSON 2xx, retries exhausted) propagate.
+      if (err instanceof UpstreamError) throw err;
+
       const durationMs = Date.now() - start;
 
       // Timeout: never retry — upstream may have partially processed

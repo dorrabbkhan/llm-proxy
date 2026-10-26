@@ -177,6 +177,29 @@ describe("Ollama Adapter", () => {
 
       expect(result.stream).toBe(true);
     });
+
+    it("fromCanonicalRequest sets stream false when canonical omits it", () => {
+      const input: CanonicalRequest = {
+        model: "llama2",
+        messages: [{ role: "user", content: "Hello" }],
+      };
+
+      const result = fromCanonicalRequest(input);
+
+      expect(result.stream).toBe(false);
+    });
+
+    it("keeps explicit stream value", () => {
+      const input: CanonicalRequest = {
+        model: "llama2",
+        messages: [{ role: "user", content: "Hello" }],
+        stream: true,
+      };
+
+      const result = fromCanonicalRequest(input);
+
+      expect(result.stream).toBe(true);
+    });
   });
 
   describe("toCanonicalResponse", () => {

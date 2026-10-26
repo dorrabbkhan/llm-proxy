@@ -24,5 +24,6 @@
       "Edit(docs/decisions.md)", "Edit(.github/**)", "Edit(AGENTS.md)", "Edit(.devin/**)",
       "Edit(LICENSE)", "Edit(.env*)"
     ]
-  }
+  },
+  "worktree": {"bgIsolation": "none"}
 }

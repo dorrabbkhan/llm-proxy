@@ -5,6 +5,7 @@
     "start": "node dist/index.js",
     "build": "tsc -p tsconfig.build.json",
     "dev": "nodemon --watch src --ext ts --exec \"ts-node -r dotenv/config src/index.ts\"",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
   },

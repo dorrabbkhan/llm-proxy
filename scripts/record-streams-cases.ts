@@ -186,7 +186,7 @@ async function ollamaSetup(
   };
 }
 
-function openaiSetup(streamsDir: string, date: string) {
+function openaiSetup(streamsDir: string) {
   const key = process.env.OPENAI_API_KEY;
   if (!key) return "OPENAI_API_KEY not set";
   const baseUrl = envOr("OPENAI_API_BASE_URL", "https://api.openai.com");
@@ -207,7 +207,8 @@ function openaiSetup(streamsDir: string, date: string) {
       ...(stream && { stream_options: { include_usage: true } }),
       ...extra,
     }),
-    sourcePrefix: `recorded: openai API, ${model}, ${date}`,
+    sourcePrefix: `recorded: openai API, ${model} (via npm run record:streams`,
+    sourceSuffix: ")",
     cases: {
       text: {
         request: {
@@ -231,6 +232,7 @@ function openaiSetup(streamsDir: string, date: string) {
           tool_choice: "auto",
           parallel_tool_calls: true,
           temperature: 0,
+          max_tokens: 128,
         },
       },
       after_tool_result: {
@@ -271,7 +273,7 @@ function openaiSetup(streamsDir: string, date: string) {
   };
 }
 
-function anthropicSetup(streamsDir: string, date: string) {
+function anthropicSetup(streamsDir: string) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return "ANTHROPIC_API_KEY not set";
   const baseUrl = envOr("ANTHROPIC_API_BASE_URL", "https://api.anthropic.com");
@@ -292,7 +294,8 @@ function anthropicSetup(streamsDir: string, date: string) {
       stream,
       ...extra,
     }),
-    sourcePrefix: `recorded: anthropic API, ${model}, ${date}`,
+    sourcePrefix: `recorded: anthropic API, ${model} (via npm run record:streams`,
+    sourceSuffix: ")",
     cases: {
       text: {
         request: {
@@ -315,7 +318,7 @@ function anthropicSetup(streamsDir: string, date: string) {
           messages: userMsg(TWO_CITIES),
           tools: ANTHROPIC_TOOL,
           tool_choice: { type: "any" },
-          max_tokens: 512,
+          max_tokens: 192,
           temperature: 0,
         },
       },
@@ -362,7 +365,7 @@ function anthropicSetup(streamsDir: string, date: string) {
   };
 }
 
-function geminiSetup(streamsDir: string, date: string) {
+function geminiSetup(streamsDir: string) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) return "GEMINI_API_KEY not set";
   const baseUrl = envOr(
@@ -385,7 +388,8 @@ function geminiSetup(streamsDir: string, date: string) {
     body: (_m: string, _stream: boolean, extra: Record<string, unknown>) => ({
       ...extra,
     }),
-    sourcePrefix: `recorded: gemini API, ${model}, ${date}`,
+    sourcePrefix: `recorded: gemini API, ${model} (via npm run record:streams`,
+    sourceSuffix: ")",
     cases: {
       text: {
         request: {
@@ -455,7 +459,6 @@ function geminiSetup(streamsDir: string, date: string) {
 /** Returns the recording setup, or a skip reason (e.g. missing key). */
 export function providerSetups(
   streamsDir: string,
-  date: string,
   ollamaKillCmd?: string,
 ): Record<
   Provider,
@@ -463,8 +466,8 @@ export function providerSetups(
 > {
   return {
     ollama: () => ollamaSetup(streamsDir, ollamaKillCmd),
-    openai: () => openaiSetup(streamsDir, date),
-    anthropic: () => anthropicSetup(streamsDir, date),
-    gemini: () => geminiSetup(streamsDir, date),
+    openai: () => openaiSetup(streamsDir),
+    anthropic: () => anthropicSetup(streamsDir),
+    gemini: () => geminiSetup(streamsDir),
   };
 }

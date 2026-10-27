@@ -13,6 +13,9 @@
  * Filters / guards:
  *   RECORD_PROVIDERS=ollama,gemini   — limit which providers run
  *   RECORD_CASES=text,max_tokens     — limit which cases run
+ *   RECORD_TWINS=max_tokens          — limit which cases get a non-streaming
+ *                                      twin call (default: every non-error
+ *                                      case; RECORD_TWINS=none → no twins)
  *   RECORD_OVERWRITE=1               — allow rewriting files that already
  *                                      exist (default: never overwrite)
  *   RECORD_<PROVIDER>_MODEL          — model override per provider
@@ -50,8 +53,12 @@ const DATE = new Date().toISOString().slice(0, 10);
 
 const RECORD_PROVIDERS = csv(process.env.RECORD_PROVIDERS);
 const RECORD_CASES = csv(process.env.RECORD_CASES);
+const RECORD_TWINS = csv(process.env.RECORD_TWINS);
 const OVERWRITE = process.env.RECORD_OVERWRITE === "1";
 const OLLAMA_MIDSTREAM_KILL = process.env.OLLAMA_MIDSTREAM_KILL;
+
+/** Live upstream requests issued per provider this run. */
+const requestCounts: Partial<Record<Provider, number>> = {};
 
 function csv(v: string | undefined): string[] | null {
   if (!v) return null;
@@ -126,6 +133,7 @@ async function recordProvider(
       c.midStreamAction && c.midStreamAfterLines
         ? { afterLines: c.midStreamAfterLines, action: c.midStreamAction }
         : undefined;
+    requestCounts[provider] = (requestCounts[provider] ?? 0) + 1;
     const res = await post(
       `${rec.baseUrl}${rec.streamPath(rec.model)}`,
       rec.headers,
@@ -173,8 +181,13 @@ async function recordProvider(
     }
 
     // Non-streaming twin (not for error cases — a non-stream call can't
-    // reproduce a mid-stream failure).
-    if (!c.expectInStreamError) {
+    // reproduce a mid-stream failure). RECORD_TWINS limits which cases
+    // pay for a twin call.
+    if (
+      !c.expectInStreamError &&
+      (!RECORD_TWINS || RECORD_TWINS.includes(name))
+    ) {
+      requestCounts[provider] = (requestCounts[provider] ?? 0) + 1;
       const twin = await post(
         `${rec.baseUrl}${(rec.twinPath ?? rec.streamPath)(rec.model)}`,
         rec.headers,
@@ -211,7 +224,7 @@ async function recordProvider(
 }
 
 async function main(): Promise<void> {
-  const setups = providerSetups(STREAMS_DIR, DATE, OLLAMA_MIDSTREAM_KILL);
+  const setups = providerSetups(STREAMS_DIR, OLLAMA_MIDSTREAM_KILL);
   for (const provider of [
     "ollama",
     "openai",
@@ -226,6 +239,10 @@ async function main(): Promise<void> {
     }
     await recordProvider(provider, rec);
   }
+  const counts = (Object.keys(requestCounts) as Provider[])
+    .map((p) => `${p}=${requestCounts[p]}`)
+    .join(", ");
+  console.log(`upstream requests made: ${counts || "none"}`);
 }
 
 main().catch((err) => {

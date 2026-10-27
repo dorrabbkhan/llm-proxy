@@ -672,3 +672,69 @@ One line each; details in the task entries above. Task PRs: 1→#1, 2→#2,
   the tool block (Anthropic never overlaps content blocks); and
   `message_end`/`error` are terminal — `encode()` writes nothing after
   them.
+
+## v1.1 Task 6: Ollama stream decoder/encoder
+
+- Spec sections implemented: §3.3 Ollama row (NDJSON decoder/encoder —
+  `message.content` → `text_delta`, `message.tool_calls` whole →
+  start + one `JSON.stringify(arguments)` delta + end, `done:true` →
+  `usage` + `message_end`, `{"error":"…"}` → `error` via
+  `toCanonicalError`), §3.4 (arguments buffered per canonical `index`
+  until `tool_call_end`, `parseToolArguments` → `{}` for empty,
+  `_invalid_arguments` wrapper for invalid).
+- Wire-format source checked 2026-10-27:
+  https://docs.ollama.com/api/chat (NDJSON stream shape — `model`,
+  `created_at`, `message{role:"assistant",content}`, `done:false`
+  chunks; `message.tool_calls[].function.{name,arguments}`;
+  `message.thinking` for think models; final line `done:true`,
+  `done_reason`, `prompt_eval_count`, `eval_count`) and
+  https://github.com/ollama/ollama/blob/main/docs/api.md ("Chat
+  request (Streaming with tools)" example). The recorded 0.40.11
+  corpus additionally carries `id` and `function.index` on tool calls
+  the docs don't show — the decoder uses the wire `id` when present
+  and the encoder emits both fields (fixtures are the oracle).
+- `message_start.id` draws from the injected `ids` — Ollama has no
+  message id (Task 3 convention: `call_0` under `sequentialIds()`).
+- `done_reason` → canonical finishReason: a stream that ended in tool
+  calls reports `tool_call` (Ollama itself leaves `done_reason:"stop"`
+  there); `"length"` → `length`, `"stop"` → `stop`, anything else →
+  `unknown`. The encoder maps back: only canonical `length` stays
+  `"length"`, everything else → `"stop"` (the two values Ollama
+  documents).
+- Mid-stream `{"error":"…"}` → `toCanonicalError(500, …)` = canonical
+  `internal`/500 — the wire carries no status, so the same failure
+  returned pre-stream (HTTP 500) applies, matching the recorded
+  `error` fixture.
+- The encoder emits nothing for `message_start` (Ollama opens with the
+  first content line) and nothing after `message_end`/`error` —
+  terminal guard pinned by a named test.
+- `errors.test.ts` STREAMING_ADAPTERS gained `ollama` — replaced
+  `stream:true → 501` rows: openai→ollama, anthropic→ollama,
+  ollama→ollama, ollama→openai, ollama→anthropic; each streaming pair
+  is covered by `stream.test.ts` or the generated contract rows.
+- Files outside the Files block: `src/services/proxy.service.test.ts`
+  — the two `stream:true → 501` unit cases pinned the openai→ollama
+  pair, which now streams by design (spec §1.2 F1); they were
+  re-pointed at the openai→gemini pair (gemini is the remaining stub
+  until Task 7) so the refusal path stays covered.
+- Fix round 1 (owner-requested):
+  - `tests/contracts/stream-sdk.test.ts`: module-level
+    `currentContentType` is reset to `"text/event-stream"` in a
+    `beforeEach`; ollama cases still override to
+    `application/x-ndjson` — no case depends on test order.
+  - Decoder shape guards: a line that parses as JSON but isn't a
+    plain object (number, string, array, `null`) and a
+    `message.tool_calls` that isn't an array both emit the same
+    canonical `upstream` error as an undecodable line and finish the
+    stream — previously the first produced a spurious `message_start`
+    (`null` threw) and the second threw from `feed()`.
+  - Decoder: a string `function.arguments` passes through verbatim as
+    `argumentsDelta` (it is already the JSON encoding); objects keep
+    `JSON.stringify`, missing stays `"{}"`.
+  - Encoder: calls open at `message_end` flush in ascending canonical
+    index as `message.tool_calls` lines just before the `done:true`
+    line (one `logger.warn` naming only the count); before an `error`
+    event they are dropped (one warn naming the count). A
+    `tool_call_delta`/`tool_call_end` for an index that never had
+    `tool_call_start` now `logger.warn`s (event type and index only)
+    instead of dropping silently; output unchanged.

@@ -13,7 +13,7 @@ export const LIVE_OLLAMA_URL =
   process.env.OLLAMA_API_BASE_URL || 'http://localhost:11434';
 
 /** Model exercised against live Ollama (D5: small, CPU-friendly). */
-export const LIVE_OLLAMA_MODEL = process.env.LIVE_OLLAMA_MODEL || 'qwen3:0.6b';
+export const LIVE_OLLAMA_MODEL = process.env.LIVE_OLLAMA_MODEL || 'qwen2.5:0.5b';
 
 const ALL_PROVIDERS: Provider[] = [
   'openai',

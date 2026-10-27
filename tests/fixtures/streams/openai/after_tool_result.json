@@ -1,0 +1,81 @@
+{
+  "source": "recorded: openai API, gpt-4o-mini (via npm run record:streams)",
+  "date": "2026-10-27",
+  "model": "gpt-4o-mini",
+  "expectedEvents": [
+    {
+      "type": "message_start",
+      "id": "chatcmpl-EdgGojtWCgQPyJb2KRyY1cFLYZfyX",
+      "model": "gpt-4o-mini-2024-07-18"
+    },
+    {
+      "type": "text_delta",
+      "text": "The"
+    },
+    {
+      "type": "text_delta",
+      "text": " weather"
+    },
+    {
+      "type": "text_delta",
+      "text": " in"
+    },
+    {
+      "type": "text_delta",
+      "text": " Paris"
+    },
+    {
+      "type": "text_delta",
+      "text": " is"
+    },
+    {
+      "type": "text_delta",
+      "text": " currently"
+    },
+    {
+      "type": "text_delta",
+      "text": " "
+    },
+    {
+      "type": "text_delta",
+      "text": "15"
+    },
+    {
+      "type": "text_delta",
+      "text": " degrees"
+    },
+    {
+      "type": "text_delta",
+      "text": " Celsius"
+    },
+    {
+      "type": "text_delta",
+      "text": " and"
+    },
+    {
+      "type": "text_delta",
+      "text": " partly"
+    },
+    {
+      "type": "text_delta",
+      "text": " cloudy"
+    },
+    {
+      "type": "text_delta",
+      "text": "."
+    },
+    {
+      "type": "usage",
+      "usage": {
+        "inputTokens": 84,
+        "outputTokens": 15,
+        "totalTokens": 99
+      }
+    },
+    {
+      "type": "message_end",
+      "finishReason": "stop"
+    }
+  ],
+  "nonStreaming": null
+}

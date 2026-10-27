@@ -1,0 +1,95 @@
+{
+  "source": "recorded: openai API, gpt-4o-mini (via npm run record:streams)",
+  "date": "2026-10-27",
+  "model": "gpt-4o-mini",
+  "expectedEvents": [
+    {
+      "type": "message_start",
+      "id": "chatcmpl-EdgGmakHYxzZCWYi7HLUDVEPa5ZVb",
+      "model": "gpt-4o-mini-2024-07-18"
+    },
+    {
+      "type": "tool_call_start",
+      "index": 0,
+      "id": "call_EIan5AUSTGyzfNQQdd0ssShu",
+      "name": "get_weather"
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 0,
+      "argumentsDelta": "{\"lo"
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 0,
+      "argumentsDelta": "catio"
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 0,
+      "argumentsDelta": "n\": \"P"
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 0,
+      "argumentsDelta": "aris"
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 0,
+      "argumentsDelta": "\"}"
+    },
+    {
+      "type": "tool_call_start",
+      "index": 1,
+      "id": "call_9YNl2tj8U8icjGsLGtqwqm0r",
+      "name": "get_weather"
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 1,
+      "argumentsDelta": "{\"lo"
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 1,
+      "argumentsDelta": "catio"
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 1,
+      "argumentsDelta": "n\": \"L"
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 1,
+      "argumentsDelta": "ondo"
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 1,
+      "argumentsDelta": "n\"}"
+    },
+    {
+      "type": "tool_call_end",
+      "index": 0
+    },
+    {
+      "type": "tool_call_end",
+      "index": 1
+    },
+    {
+      "type": "usage",
+      "usage": {
+        "inputTokens": 63,
+        "outputTokens": 44,
+        "totalTokens": 107
+      }
+    },
+    {
+      "type": "message_end",
+      "finishReason": "tool_call"
+    }
+  ],
+  "nonStreaming": null
+}

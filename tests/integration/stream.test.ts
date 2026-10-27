@@ -27,6 +27,7 @@ import {
 } from "../mocks/upstreams";
 import openaiFixtures from "../fixtures/openai.json";
 import anthropicFixtures from "../fixtures/anthropic.json";
+import geminiFixtures from "../fixtures/gemini.json";
 import ollamaFixtures from "../fixtures/ollama.json";
 
 /**
@@ -88,6 +89,22 @@ function postStream(path: string, body: unknown): request.Test {
       res.on("data", (chunk: string) => (text += chunk));
       res.on("end", () => cb(null, text));
     });
+}
+
+/** Capture the URLs of msw-intercepted upstream requests per provider. */
+function captureUpstreamUrls(provider: Provider): {
+  urls: string[];
+  detach: () => void;
+} {
+  const urls: string[] = [];
+  const onRequest = ({ request: req }: { request: Request }) => {
+    if (req.url.startsWith(MOCK_BASE_URLS[provider])) urls.push(req.url);
+  };
+  server.events.on("request:start", onRequest);
+  return {
+    urls,
+    detach: () => server.events.removeListener("request:start", onRequest),
+  };
 }
 
 describe("streaming (spec §3.2)", () => {
@@ -224,6 +241,157 @@ describe("streaming (spec §3.2)", () => {
       stream: true,
       stream_options: { include_usage: true },
     });
+  });
+
+  it("openai → gemini stream:true streams SSE", async () => {
+    setPair("openai", "gemini");
+    const upstream = captureUpstreamUrls("gemini");
+    try {
+      const res = await postStream("/v1/chat/completions", STREAM_BODY);
+
+      // Streams in the source's format — OpenAI SSE chunks plus [DONE].
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toContain("text/event-stream");
+      const body = res.body as string;
+      expect(body).toContain("data: {");
+      expect(body.trimEnd().endsWith("data: [DONE]")).toBe(true);
+    } finally {
+      upstream.detach();
+    }
+
+    // The upstream request went to the streaming endpoint (spec §3.2).
+    expect(upstream.urls).toEqual([
+      `${MOCK_BASE_URLS.gemini}/v1beta/models/gpt-4:streamGenerateContent?alt=sse`,
+    ]);
+    expect(capturedRequests.gemini).toHaveLength(1);
+  });
+
+  it("anthropic → gemini stream:true streams SSE", async () => {
+    setPair("anthropic", "gemini");
+    const upstream = captureUpstreamUrls("gemini");
+    try {
+      const res = await postStream("/v1/messages", {
+        ...(anthropicFixtures.requests.basic as Record<string, unknown>),
+        stream: true,
+      });
+
+      // Streams in the source's format — Anthropic event-typed SSE.
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toContain("text/event-stream");
+      const body = res.body as string;
+      expect(body).toContain("event: message_start");
+      expect(body.trimEnd().endsWith('data: {"type":"message_stop"}')).toBe(
+        true,
+      );
+    } finally {
+      upstream.detach();
+    }
+
+    expect(upstream.urls).toHaveLength(1);
+    expect(upstream.urls[0]).toContain(":streamGenerateContent?alt=sse");
+    expect(capturedRequests.gemini).toHaveLength(1);
+  });
+
+  it("ollama → gemini stream:true streams NDJSON", async () => {
+    setPair("ollama", "gemini");
+
+    const res = await postStream("/api/chat", {
+      ...(ollamaFixtures.requests.basic as Record<string, unknown>),
+      stream: true,
+    });
+
+    // Streams in the source's format — Ollama NDJSON ending in a
+    // `done: true` line.
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("application/x-ndjson");
+    const body = res.body as string;
+    const lines = body.split("\n").filter((l) => l !== "");
+    expect(lines.length).toBeGreaterThan(1);
+    for (const line of lines) JSON.parse(line);
+    expect(JSON.parse(lines.at(-1)!)).toMatchObject({ done: true });
+
+    expect(capturedRequests.gemini).toHaveLength(1);
+  });
+
+  it.each(providers)(
+    "gemini :streamGenerateContent?alt=sse → %s",
+    async (target) => {
+      setPair("gemini", target);
+      const upstream = captureUpstreamUrls(target);
+      let res: request.Response;
+      try {
+        res = await postStream(
+          "/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse",
+          geminiFixtures.requests.basic as object,
+        );
+      } finally {
+        upstream.detach();
+      }
+
+      // Streams in the source's format — SSE data: frames of
+      // GenerateContentResponse objects.
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toContain("text/event-stream");
+      const body = res.body as string;
+      const frames = body
+        .split("\r\n\r\n")
+        .filter((f) => f.trim() !== "")
+        .map((f) => JSON.parse(f.replace(/^data: /, "")) as {
+          candidates?: { finishReason?: string }[];
+          error?: unknown;
+        });
+      expect(frames.length).toBeGreaterThan(0);
+      expect(frames.at(-1)!.candidates?.[0]?.finishReason).toBe("STOP");
+      expect(frames.at(-1)!.error).toBeUndefined();
+
+      expect(upstream.urls).toHaveLength(1);
+      if (target === "gemini") {
+        expect(upstream.urls[0]).toContain(
+          ":streamGenerateContent?alt=sse",
+        );
+      }
+      expect(capturedRequests[target]).toHaveLength(1);
+    },
+  );
+
+  it("gemini :streamGenerateContent without alt → streamed JSON array", async () => {
+    setPair("gemini", "ollama");
+
+    const res = await postStream(
+      "/v1beta/models/gemini-2.0-flash:streamGenerateContent",
+      geminiFixtures.requests.basic as object,
+    );
+
+    // No alt=sse → the streamed JSON array form (spec §3.3), still a
+    // valid JSON document when it ends.
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("application/json");
+    const elements = JSON.parse(res.body as string) as {
+      candidates?: { finishReason?: string }[];
+    }[];
+    expect(elements.length).toBeGreaterThan(0);
+    expect(elements.at(-1)!.candidates?.[0]?.finishReason).toBe("STOP");
+
+    expect(capturedRequests.ollama).toHaveLength(1);
+  });
+
+  it("gemini percent-encoded %3AstreamGenerateContent streams", async () => {
+    setPair("gemini", "ollama");
+
+    const res = await postStream(
+      "/v1beta/models/gemini-2.0-flash%3AstreamGenerateContent?alt=sse",
+      geminiFixtures.requests.basic as object,
+    );
+
+    // The percent-encoded path is the same streaming endpoint — SSE
+    // frames like the plain path.
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/event-stream");
+    const body = res.body as string;
+    expect(body).toContain("data: {");
+    expect(body).toContain('"finishReason"');
+
+    expect(capturedRequests.ollama).toHaveLength(1);
   });
 
   it("stream request upstream 404 → JSON error in source dialect", async () => {

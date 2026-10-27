@@ -24,7 +24,12 @@ const WIRE_EXT: Record<Provider, string> = {
 };
 
 // Providers whose createStreamDecoder is implemented.
-const DECODED_PROVIDERS: Provider[] = ["openai", "anthropic", "ollama"];
+const DECODED_PROVIDERS: Provider[] = [
+  "openai",
+  "anthropic",
+  "gemini",
+  "ollama",
+];
 
 const EVERY_SPLIT_MAX_BYTES = 4 * 1024;
 const SAMPLED_SPLIT_POINTS = 150;
@@ -169,6 +174,159 @@ describe("stream decoders", () => {
       new TextEncoder().encode(truncated),
     ]);
     expect(events.at(-1)?.type).toBe("error");
+  });
+
+  it("gemini truncated stream ends with an error event", () => {
+    // Drop the last data: frame (the one carrying finishReason) — the
+    // socket just closes mid-stream and the decoder must report an
+    // in-stream error, not a silent half-message (spec §3.2).
+    const text = readFileSync(
+      join(STREAMS_DIR, "gemini", "after_tool_result.sse"),
+      "utf8",
+    );
+    const frames = text.split("\n\n").filter((f) => f.trim() !== "");
+    const truncated = frames.slice(0, -1).join("\n\n") + "\n\n";
+
+    const events = decode("gemini", "gemini-2.5-flash", [
+      new TextEncoder().encode(truncated),
+    ]);
+    expect(events.at(-1)?.type).toBe("error");
+  });
+
+  it("gemini decoder: in-stream error body → error event", () => {
+    // Google reports failures inside the stream as an
+    // {error:{code,message,status}} data frame — mapped through
+    // toCanonicalError like the non-streaming path. Built inline: no
+    // error fixture exists in Google's published captures.
+    const sse =
+      'data: {"error":{"code":429,"message":"Quota exceeded","status":"RESOURCE_EXHAUSTED"}}\n\n';
+
+    const events = decode("gemini", "gemini-2.5-flash", [
+      new TextEncoder().encode(sse),
+    ]);
+    expect(events).toEqual([
+      {
+        type: "error",
+        error: {
+          kind: "rate_limit",
+          status: 429,
+          message: "Quota exceeded",
+        },
+      },
+    ]);
+  });
+
+  it("gemini decoder: non-object JSON payload → error event", () => {
+    // A data: payload that parses as JSON but isn't a plain object
+    // can't carry a GenerateContentResponse — the same upstream error
+    // as an undecodable chunk, and nothing else (no spurious
+    // message_start).
+    for (const payload of ["5", '"hello"', "[1,2,3]", "null", "true"]) {
+      const events = decode("gemini", "gemini-2.5-flash", [
+        new TextEncoder().encode(`data: ${payload}\n\n`),
+      ]);
+      expect(events, `payload ${payload}`).toEqual([
+        {
+          type: "error",
+          error: {
+            kind: "upstream",
+            status: 502,
+            message: "Upstream sent an undecodable stream chunk",
+          },
+        },
+      ]);
+    }
+  });
+
+  it("gemini decoder: non-array candidates/parts → error event", () => {
+    // `candidates` or `content.parts` present but not an array is a
+    // malformed response — the same upstream error, not a throw from
+    // feed().
+    for (const payload of [
+      '{"candidates":{}}',
+      '{"candidates":[{"content":{"parts":{}}}]}',
+    ]) {
+      const events = decode("gemini", "gemini-2.5-flash", [
+        new TextEncoder().encode(`data: ${payload}\n\n`),
+      ]);
+      expect(events.at(-1)?.type, `payload ${payload}`).toBe("error");
+      expect(events.at(-1)).toMatchObject({
+        error: { kind: "upstream", status: 502 },
+      });
+    }
+  });
+
+  it("gemini decoder: non-object candidate or part → error event", () => {
+    // A member of candidates or content.parts that isn't a plain
+    // object is the same malformed-response error as the array-shape
+    // guards — never silently skipped.
+    for (const payload of [
+      '{"candidates":[5]}',
+      '{"candidates":[null,{"content":{"parts":[{"text":"x"}]},"finishReason":"STOP"}]}',
+      '{"candidates":[{"content":{"parts":["x",{"text":"hi"}]},"finishReason":"STOP"}]}',
+      '{"candidates":[{"content":{"parts":[null]}}]}',
+    ]) {
+      const events = decode("gemini", "gemini-2.5-flash", [
+        new TextEncoder().encode(`data: ${payload}\n\n`),
+      ]);
+      expect(events.at(-1)?.type, `payload ${payload}`).toBe("error");
+      expect(events.at(-1)).toMatchObject({
+        error: {
+          kind: "upstream",
+          status: 502,
+          message: "Upstream sent an undecodable stream chunk",
+        },
+      });
+    }
+  });
+
+  it("gemini decoder end() is idempotent", () => {
+    // The truncation error finishes the stream — a second end() and
+    // any later feed() emit nothing.
+    const decoder = adapters.gemini.createStreamDecoder(
+      "gemini-2.5-flash",
+      sequentialIds(),
+    );
+    expect(decoder.end()).toEqual([
+      {
+        type: "error",
+        error: {
+          kind: "upstream",
+          status: 502,
+          message: "Upstream stream ended without completing",
+        },
+      },
+    ]);
+    expect(decoder.end()).toEqual([]);
+    const sse =
+      'data: {"candidates":[{"index":0,"content":{"role":"model","parts":[{"text":"x"}]},"finishReason":"STOP"}]}\n\n';
+    expect(decoder.feed(new TextEncoder().encode(sse))).toEqual([]);
+  });
+
+  it("gemini decoder maps safety finish reasons to content_filter", () => {
+    // Google's FinishReason enum (ai.google.dev/api/generate-content
+    // #FinishReason): BLOCKLIST, PROHIBITED_CONTENT, SPII and
+    // IMAGE_SAFETY are terminal safety stops like SAFETY/RECITATION —
+    // all map to canonical content_filter. Built inline: the recorded
+    // corpus carries only STOP/MAX_TOKENS.
+    for (const reason of [
+      "SAFETY",
+      "RECITATION",
+      "BLOCKLIST",
+      "PROHIBITED_CONTENT",
+      "SPII",
+      "IMAGE_SAFETY",
+    ]) {
+      const sse =
+        `data: {"candidates":[{"index":0,"content":{"role":"model","parts":[{"text":"x"}]},"finishReason":"${reason}"}],"usageMetadata":{"promptTokenCount":4,"candidatesTokenCount":1,"totalTokenCount":5}}\n\n`;
+      const events = decode("gemini", "gemini-2.5-flash", [
+        new TextEncoder().encode(sse),
+      ]);
+      expect(events.at(-1), `finishReason ${reason}`).toEqual({
+        type: "message_end",
+        finishReason: "content_filter",
+      });
+    }
   });
 
   it("ollama decoder ignores thinking", () => {

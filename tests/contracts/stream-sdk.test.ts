@@ -13,14 +13,17 @@ import type { AddressInfo } from "node:net";
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
 import { Ollama } from "ollama";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   openaiAdapter,
   anthropicAdapter,
+  geminiAdapter,
   ollamaAdapter,
 } from "../../src/transformers/adapters";
 import { mapToAnthropicStopReason } from "../../src/transformers/adapters/anthropic.adapter";
+import { mapToGeminiFinishReason } from "../../src/transformers/adapters/gemini.adapter";
 import { reassembleStream } from "../../src/utils/stream-reassemble";
 import { logger } from "../../src/utils/logger";
 import type { CanonicalStreamEvent } from "../../src/types/canonical.types";
@@ -30,6 +33,7 @@ import type {
   TextBlock,
   ToolUseBlock,
 } from "../../src/types/anthropic.types";
+import type { GenerateContentRequest } from "../../src/types/gemini.types";
 import type { OllamaChatRequest } from "../../src/types/ollama.types";
 
 /**
@@ -66,6 +70,12 @@ const anthropicCases = readdirSync(join(STREAMS_DIR, "anthropic"))
   .filter((f) => f.endsWith(".json") && !f.endsWith(".nonstreaming.json"))
   .map((f) => f.slice(0, -".json".length))
   .filter((name) => name !== "error");
+
+// No error fixture exists for gemini (none in Google's published
+// captures — docs/decisions.md "v1.1 Task 3"), so no filter here.
+const geminiCases = readdirSync(join(STREAMS_DIR, "gemini"))
+  .filter((f) => f.endsWith(".json") && !f.endsWith(".nonstreaming.json"))
+  .map((f) => f.slice(0, -".json".length));
 
 // "error" makes the SDK throw on the {"error":…} line — covered below.
 const ollamaCases = readdirSync(join(STREAMS_DIR, "ollama"))
@@ -141,6 +151,25 @@ const OLLAMA_STREAMING_REQUEST: OllamaChatRequest = {
   stream: true,
 };
 
+function encodeGemini(
+  events: CanonicalStreamEvent[],
+  sourceRequest: GenerateContentRequest,
+  query: Record<string, string> = { alt: "sse" },
+): string {
+  const encoder = geminiAdapter.createStreamEncoder({
+    sourceRequest,
+    query,
+    requestedModel: "m",
+  });
+  let out = "";
+  for (const event of events) out += encoder.encode(event);
+  return out + encoder.end();
+}
+
+const GEMINI_STREAMING_REQUEST: GenerateContentRequest = {
+  contents: [{ role: "user", parts: [{ text: "hi" }] }],
+};
+
 let currentBody = "";
 let currentContentType = "text/event-stream";
 const server = createServer((_req, res) => {
@@ -176,6 +205,14 @@ function anthropicClient(): Anthropic {
 function ollamaClient(): Ollama {
   const port = (server.address() as AddressInfo).port;
   return new Ollama({ host: `http://127.0.0.1:${port}` });
+}
+
+function geminiModel() {
+  const port = (server.address() as AddressInfo).port;
+  return new GoogleGenerativeAI("test-key").getGenerativeModel(
+    { model: "m" },
+    { baseUrl: `http://127.0.0.1:${port}` },
+  );
 }
 
 describe("stream encoders via the provider SDK", () => {
@@ -832,5 +869,302 @@ describe("stream encoders via the provider SDK", () => {
     expect(
       afterError.encode({ type: "message_end", finishReason: "stop" }),
     ).toBe("");
+  });
+
+  it.each(geminiCases)("gemini SDK parses encoded %s", async (name) => {
+    const fixture = fixtureFor("gemini", name);
+    currentBody = encodeGemini(
+      fixture.expectedEvents,
+      GEMINI_STREAMING_REQUEST,
+    );
+
+    const { stream, response } = await geminiModel().generateContentStream(
+      { contents: [{ role: "user", parts: [{ text: "hi" }] }] },
+    );
+    for await (const _chunk of stream) {
+      // consume the whole stream
+    }
+    const final = await response;
+
+    const expected = reassembleStream(fixture.expectedEvents);
+
+    expect(final.text()).toBe(expected.message.content);
+    expect(final.functionCalls() ?? []).toEqual(
+      (expected.message.toolCalls ?? []).map((tc) => ({
+        id: tc.id,
+        name: tc.function.name,
+        args: JSON.parse(tc.function.arguments),
+      })),
+    );
+    expect(final.candidates?.[0]?.finishReason).toBe(
+      mapToGeminiFinishReason(expected.finishReason),
+    );
+    if (expected.usage) {
+      expect(final.usageMetadata).toMatchObject({
+        promptTokenCount: expected.usage.inputTokens,
+        candidatesTokenCount: expected.usage.outputTokens,
+        totalTokenCount: expected.usage.totalTokens,
+      });
+    }
+  });
+
+  it("gemini array form without alt=sse", () => {
+    // :streamGenerateContent with no alt= query streams a JSON array of
+    // GenerateContentResponse elements (spec §3.3) — still valid JSON
+    // when it ends.
+    const fixture = fixtureFor("gemini", "text");
+    const encoder = geminiAdapter.createStreamEncoder({
+      sourceRequest: GEMINI_STREAMING_REQUEST,
+      query: {},
+      requestedModel: "m",
+    });
+    expect(encoder.contentType).toBe("application/json");
+
+    let out = "";
+    for (const event of fixture.expectedEvents) {
+      out += encoder.encode(event);
+    }
+    out += encoder.end();
+
+    const elements = JSON.parse(out) as {
+      candidates?: {
+        content?: { parts?: { text?: string }[] };
+        finishReason?: string;
+      }[];
+      usageMetadata?: {
+        promptTokenCount?: number;
+        candidatesTokenCount?: number;
+        totalTokenCount?: number;
+      };
+      modelVersion?: string;
+      responseId?: string;
+    }[];
+    expect(elements.length).toBeGreaterThan(0);
+    const text = elements
+      .flatMap(
+        (el) =>
+          el.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "") ??
+          [],
+      )
+      .join("");
+    const expected = reassembleStream(fixture.expectedEvents);
+    expect(text).toBe(expected.message.content);
+    const last = elements.at(-1)!;
+    expect(last.candidates?.[0]?.finishReason).toBe(
+      mapToGeminiFinishReason(expected.finishReason),
+    );
+    expect(last.usageMetadata).toMatchObject({
+      promptTokenCount: expected.usage!.inputTokens,
+      candidatesTokenCount: expected.usage!.outputTokens,
+      totalTokenCount: expected.usage!.totalTokens,
+    });
+    expect(last.modelVersion).toBe("m");
+  });
+
+  it("gemini array form closes after an error element", () => {
+    // An error event mid-array must still leave valid JSON — the "]"
+    // closes the array after the {"error":{…}} element (spec §3.3).
+    const events: CanonicalStreamEvent[] = [
+      { type: "message_start", id: "resp-1", model: "m" },
+      { type: "text_delta", text: "hi" },
+      {
+        type: "error",
+        error: { kind: "upstream", status: 502, message: "boom" },
+      },
+    ];
+    const out = encodeGemini(events, GEMINI_STREAMING_REQUEST, {});
+
+    const elements = JSON.parse(out) as { error?: { code?: number } }[];
+    expect(elements.at(-1)).toEqual({
+      error: { code: 502, message: "boom", status: "INTERNAL" },
+    });
+  });
+
+  it("gemini SSE error frame carries the google error shape", () => {
+    const out = encodeGemini(
+      [
+        { type: "message_start", id: "resp-1", model: "m" },
+        {
+          type: "error",
+          error: { kind: "rate_limit", status: 429, message: "slow down" },
+        },
+      ],
+      GEMINI_STREAMING_REQUEST,
+    );
+
+    expect(out).toContain("data: {");
+    expect(out).toContain(
+      '"error":{"code":429,"message":"slow down","status":"RESOURCE_EXHAUSTED"}',
+    );
+    expect(out.endsWith("\r\n\r\n")).toBe(true);
+  });
+
+  it("gemini encoder buffers tool args until tool_call_end", () => {
+    // Deltas may interleave across indices (§3.1 rule 5) — each call is
+    // keyed by canonical index and emitted whole at tool_call_end.
+    const events: CanonicalStreamEvent[] = [
+      { type: "message_start", id: "resp-1", model: "m" },
+      { type: "tool_call_start", index: 0, id: "call_a", name: "get_weather" },
+      { type: "tool_call_delta", index: 0, argumentsDelta: '{"city":' },
+      { type: "tool_call_start", index: 1, id: "call_b", name: "get_time" },
+      { type: "tool_call_delta", index: 1, argumentsDelta: '{"tz":"UTC"}' },
+      { type: "tool_call_end", index: 1 },
+      { type: "tool_call_delta", index: 0, argumentsDelta: '"Paris"}' },
+      { type: "tool_call_end", index: 0 },
+      { type: "message_end", finishReason: "tool_call" },
+    ];
+    const out = encodeGemini(events, GEMINI_STREAMING_REQUEST, {});
+
+    const elements = JSON.parse(out) as {
+      candidates?: {
+        content?: {
+          parts?: { functionCall?: { id?: string; name?: string; args?: unknown } }[];
+        };
+      }[];
+    }[];
+    const calls = elements.flatMap(
+      (el) =>
+        el.candidates?.[0]?.content?.parts
+          ?.map((p) => p.functionCall)
+          .filter((fc) => fc !== undefined) ?? [],
+    );
+    expect(calls).toEqual([
+      { id: "call_b", name: "get_time", args: { tz: "UTC" } },
+      { id: "call_a", name: "get_weather", args: { city: "Paris" } },
+    ]);
+  });
+
+  it("gemini invalid arguments become the _invalid_arguments wrapper", () => {
+    const events: CanonicalStreamEvent[] = [
+      { type: "message_start", id: "resp-1", model: "m" },
+      { type: "tool_call_start", index: 0, id: "call_a", name: "f" },
+      { type: "tool_call_delta", index: 0, argumentsDelta: "not-json" },
+      { type: "tool_call_end", index: 0 },
+      { type: "message_end", finishReason: "tool_call" },
+    ];
+    const out = encodeGemini(events, GEMINI_STREAMING_REQUEST);
+
+    expect(out).toContain("_invalid_arguments");
+    expect(out).toContain("not-json");
+  });
+
+  it("gemini encoder flushes unended tool calls before the final element", () => {
+    // A tool_call_start with no matching tool_call_end leaves the call
+    // buffered; at message_end it flushes as the same single-part
+    // candidate element tool_call_end would have produced (one
+    // logger.warn naming only the count).
+    const warnSpy = vi.spyOn(logger, "warn");
+    const events: CanonicalStreamEvent[] = [
+      { type: "message_start", id: "resp-1", model: "m" },
+      { type: "tool_call_start", index: 0, id: "call_a", name: "get_weather" },
+      {
+        type: "tool_call_delta",
+        index: 0,
+        argumentsDelta: '{"city":"Paris"}',
+      },
+      { type: "message_end", finishReason: "tool_call" },
+    ];
+    const out = encodeGemini(events, GEMINI_STREAMING_REQUEST, {});
+
+    const elements = JSON.parse(out) as {
+      candidates?: {
+        content?: {
+          parts?: { functionCall?: { name?: string; args?: unknown } }[];
+        };
+        finishReason?: string;
+      }[];
+    }[];
+    const flushed = elements
+      .flatMap((el) => el.candidates?.[0]?.content?.parts ?? [])
+      .filter((p) => p.functionCall !== undefined);
+    expect(flushed).toEqual([
+      {
+        functionCall: {
+          id: "call_a",
+          name: "get_weather",
+          args: { city: "Paris" },
+        },
+      },
+    ]);
+    expect(elements.at(-1)!.candidates?.[0]?.finishReason).toBe("STOP");
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(String(warnSpy.mock.calls[0]![0])).toContain("1");
+  });
+
+  it("gemini encoder warns on duplicate tool_call_start and keeps the first call", () => {
+    // A second tool_call_start for an index that is already open is
+    // ignored — the buffered call is kept and the warn carries only
+    // the event type and index (no names, ids or arguments).
+    const warnSpy = vi.spyOn(logger, "warn");
+    const events: CanonicalStreamEvent[] = [
+      { type: "message_start", id: "resp-1", model: "m" },
+      { type: "tool_call_start", index: 0, id: "call_a", name: "get_weather" },
+      { type: "tool_call_delta", index: 0, argumentsDelta: '{"city":' },
+      { type: "tool_call_start", index: 0, id: "call_b", name: "get_time" },
+      { type: "tool_call_delta", index: 0, argumentsDelta: '"Paris"}' },
+      { type: "tool_call_end", index: 0 },
+      { type: "message_end", finishReason: "tool_call" },
+    ];
+    const out = encodeGemini(events, GEMINI_STREAMING_REQUEST, {});
+
+    const elements = JSON.parse(out) as {
+      candidates?: {
+        content?: {
+          parts?: {
+            functionCall?: { id?: string; name?: string; args?: unknown };
+          }[];
+        };
+      }[];
+    }[];
+    const calls = elements.flatMap(
+      (el) =>
+        el.candidates?.[0]?.content?.parts
+          ?.map((p) => p.functionCall)
+          .filter((fc) => fc !== undefined) ?? [],
+    );
+    expect(calls).toEqual([
+      { id: "call_a", name: "get_weather", args: { city: "Paris" } },
+    ]);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const warnMessage = String(warnSpy.mock.calls[0]![0]);
+    expect(warnMessage).toContain("tool_call_start");
+    expect(warnMessage).toContain("0");
+    expect(warnMessage).not.toContain("get_weather");
+    expect(warnMessage).not.toContain("get_time");
+    expect(warnMessage).not.toContain("call_a");
+    expect(warnMessage).not.toContain("call_b");
+    expect(warnMessage).not.toContain("Paris");
+  });
+
+  it("gemini encoder writes nothing after a terminal event", () => {
+    const afterEnd = geminiAdapter.createStreamEncoder({
+      sourceRequest: GEMINI_STREAMING_REQUEST,
+      query: {},
+      requestedModel: "m",
+    });
+    afterEnd.encode({ type: "message_start", id: "resp-1", model: "m" });
+    afterEnd.encode({ type: "message_end", finishReason: "stop" });
+    expect(afterEnd.encode({ type: "text_delta", text: "late" })).toBe("");
+    expect(
+      afterEnd.encode({ type: "message_end", finishReason: "stop" }),
+    ).toBe("");
+    expect(afterEnd.end()).toBe("]");
+
+    const afterError = geminiAdapter.createStreamEncoder({
+      sourceRequest: GEMINI_STREAMING_REQUEST,
+      query: { alt: "sse" },
+      requestedModel: "m",
+    });
+    afterError.encode({
+      type: "error",
+      error: { kind: "upstream", status: 502, message: "boom" },
+    });
+    expect(afterError.encode({ type: "text_delta", text: "late" })).toBe(
+      "",
+    );
+    expect(
+      afterError.encode({ type: "message_end", finishReason: "stop" }),
+    ).toBe("");
+    expect(afterError.end()).toBe("");
   });
 });

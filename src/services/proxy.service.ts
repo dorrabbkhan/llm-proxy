@@ -181,8 +181,12 @@ export async function proxyRequest(
   parsed.data.model = model;
 
   // Streaming (spec §3.2): a `stream` body flag on the JSON-body sources,
-  // the dedicated streaming endpoint on Gemini.
+  // the dedicated streaming endpoint on Gemini — which carries no body
+  // flag, so canonical.stream is set here for the target adapter's
+  // own streaming marker (openai stream_options, anthropic/ollama
+  // stream:true).
   if (parsed.data.stream === true || route.isStreamPath?.(path) === true) {
+    parsed.data.stream = true;
     return proxyChatStream(
       parsed.data,
       body,
@@ -270,8 +274,10 @@ export async function proxyRequest(
 /**
  * Streaming chat flow (spec §3.2): target decoder + source encoder,
  * postStream for upstream bytes, runStreamPipeline for the pipe.
- * Adapters still stubbed (Tasks 5–7) throw NotSupportedError here —
- * the v1.0.1 501, before any upstream call.
+ * All four adapters stream since v1.1 Task 7 — the v1.0.1
+ * streaming-refusal path is gone. A Gemini target uses the route's
+ * streamRequestPath (`:streamGenerateContent?alt=sse`); the others
+ * stream on the chat path.
  */
 async function proxyChatStream(
   canonical: CanonicalRequest,

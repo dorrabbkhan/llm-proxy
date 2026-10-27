@@ -82,6 +82,8 @@ export const PROVIDER_ROUTES: Record<Provider, ProviderRoute[]> = {
       method: "POST",
       pathPrefix: "/v1beta/models",
       requestPath: (model) => `/v1beta/models/${model}:generateContent`,
+      streamRequestPath: (model) =>
+        `/v1beta/models/${model}:streamGenerateContent?alt=sse`,
       modelFromPath: (path) => geminiPathParts(path)?.model,
       isStreamPath: (path) =>
         geminiPathParts(path)?.method === "streamGenerateContent",

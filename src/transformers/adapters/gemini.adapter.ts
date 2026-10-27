@@ -9,16 +9,11 @@ import type {
   CanonicalFinishReason,
   ProviderAdapter,
   CanonicalModelList,
-  StreamDecoder,
-  StreamEncoder,
-  StreamEncoderContext,
-  IdGenerator,
 } from "../../types/canonical.types";
 import {
   kindFromStatus,
   makeCanonicalError,
 } from "../../utils/canonical-error";
-import { NotSupportedError } from "../../utils/errors";
 import type {
   Content,
   GenerateContentRequest,
@@ -26,6 +21,10 @@ import type {
   Part,
   GeminiRole,
 } from "../../types/gemini.types";
+import {
+  createStreamDecoder,
+  createStreamEncoder,
+} from "./gemini.stream";
 
 /**
  * Gemini FinishReason values — duplicated locally so the SDK stays a
@@ -37,6 +36,10 @@ const FinishReason = {
   MAX_TOKENS: "MAX_TOKENS",
   SAFETY: "SAFETY",
   RECITATION: "RECITATION",
+  BLOCKLIST: "BLOCKLIST",
+  PROHIBITED_CONTENT: "PROHIBITED_CONTENT",
+  SPII: "SPII",
+  IMAGE_SAFETY: "IMAGE_SAFETY",
 } as const;
 type FinishReason = (typeof FinishReason)[keyof typeof FinishReason];
 
@@ -267,7 +270,7 @@ export function toCanonicalResponse(
   };
 }
 
-function mapFinishReason(
+export function mapFinishReason(
   reason: FinishReason | string | undefined,
 ): CanonicalFinishReason {
   switch (reason) {
@@ -281,6 +284,14 @@ function mapFinishReason(
     case "SAFETY":
     case FinishReason.RECITATION:
     case "RECITATION":
+    case FinishReason.BLOCKLIST:
+    case "BLOCKLIST":
+    case FinishReason.PROHIBITED_CONTENT:
+    case "PROHIBITED_CONTENT":
+    case FinishReason.SPII:
+    case "SPII":
+    case FinishReason.IMAGE_SAFETY:
+    case "IMAGE_SAFETY":
       return "content_filter";
     default:
       return "stop";
@@ -352,7 +363,9 @@ export function fromCanonicalModelList(
   };
 }
 
-function mapToGeminiFinishReason(reason: CanonicalFinishReason): FinishReason {
+export function mapToGeminiFinishReason(
+  reason: CanonicalFinishReason,
+): FinishReason {
   switch (reason) {
     case "stop":
       return FinishReason.STOP;
@@ -415,23 +428,4 @@ export function fromCanonicalError(err: CanonicalError): unknown {
       status: GEMINI_ERROR_STATUS[err.kind],
     },
   };
-}
-
-// ============ STREAMING (stub — Task 7) ============
-
-export function createStreamDecoder(
-  _model: string,
-  _ids?: IdGenerator,
-): StreamDecoder {
-  throw new NotSupportedError(
-    'Streaming is not supported yet (planned for v1.1). Send "stream": false.',
-  );
-}
-
-export function createStreamEncoder(
-  _ctx: StreamEncoderContext<GenerateContentRequest>,
-): StreamEncoder {
-  throw new NotSupportedError(
-    'Streaming is not supported yet (planned for v1.1). Send "stream": false.',
-  );
 }

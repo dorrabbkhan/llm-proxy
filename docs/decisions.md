@@ -257,3 +257,13 @@ One entry per decision or per task that deviated from the plan or spec. Newest a
   - `README.md` — replaced the "Adding a provider" section with a link to
     `CONTRIBUTING.md#adding-a-provider`, as the task requires the section to
     move. No other README changes (Task 9 owns the rest).
+- Owner decisions on PR #9 (2026-10-27):
+  - The CLA legal text is approved by the owner; the `# DRAFT — requires owner
+    review` marker was removed, so `CLA.md` is final.
+  - The owner email (`dorrabbk@gmail.com`) stays in `CLA.md` as the Project
+    Owner contact.
+  - `contributor-assistant/github-action` is pinned by commit SHA
+    (`ca4a40a7d1004f18d9960b404b97e5f30a505a08`, tag `v2.6.1`) because the
+    upstream repository was archived on 2026-03-23.
+  - The `cla-signatures` branch was created from main `fc0be60` on the owner's
+    request (the action requires the branch to pre-exist).

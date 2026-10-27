@@ -1,5 +1,3 @@
-# DRAFT — requires owner review
-
 # llm-proxy Individual Contributor License Agreement
 
 Adapted from the Apache Software Foundation Individual Contributor License

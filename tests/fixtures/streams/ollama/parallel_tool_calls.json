@@ -17,7 +17,7 @@
     {
       "type": "tool_call_delta",
       "index": 0,
-      "argumentsDelta": "{\"location\": \"Paris\"}"
+      "argumentsDelta": "{\"location\":\"Paris\"}"
     },
     {
       "type": "tool_call_end",
@@ -32,7 +32,7 @@
     {
       "type": "tool_call_delta",
       "index": 1,
-      "argumentsDelta": "{\"location\": \"London\"}"
+      "argumentsDelta": "{\"location\":\"London\"}"
     },
     {
       "type": "tool_call_end",

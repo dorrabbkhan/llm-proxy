@@ -17,7 +17,7 @@
     {
       "type": "tool_call_delta",
       "index": 0,
-      "argumentsDelta": "{\"a\": 2,\"b\": 3}"
+      "argumentsDelta": "{\"a\":2,\"b\":3}"
     },
     {
       "type": "tool_call_end",
@@ -32,7 +32,7 @@
     {
       "type": "tool_call_delta",
       "index": 1,
-      "argumentsDelta": "{\"a\": 4,\"b\": 5}"
+      "argumentsDelta": "{\"a\":4,\"b\":5}"
     },
     {
       "type": "tool_call_end",
@@ -47,7 +47,7 @@
     {
       "type": "tool_call_delta",
       "index": 2,
-      "argumentsDelta": "{\"a\": 6,\"b\": 7}"
+      "argumentsDelta": "{\"a\":6,\"b\":7}"
     },
     {
       "type": "tool_call_end",

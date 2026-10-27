@@ -17,7 +17,7 @@
     {
       "type": "tool_call_delta",
       "index": 0,
-      "argumentsDelta": "{\"denominator\": 2,\"numerator\": 100}"
+      "argumentsDelta": "{\"denominator\":2,\"numerator\":100}"
     },
     {
       "type": "tool_call_end",

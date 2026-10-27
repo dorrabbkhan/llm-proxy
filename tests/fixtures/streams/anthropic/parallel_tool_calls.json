@@ -1,0 +1,75 @@
+{
+  "source": "recorded: anthropic API, claude-haiku-4-5 (via npm run record:streams)",
+  "date": "2026-10-27",
+  "model": "claude-haiku-4-5",
+  "expectedEvents": [
+    {
+      "type": "message_start",
+      "id": "msg_011CgTDo83npW8xDm3hEzTEe",
+      "model": "claude-haiku-4-5-20251001"
+    },
+    {
+      "type": "tool_call_start",
+      "index": 0,
+      "id": "toolu_01HEX2G6nfJuHMzr18xtEKvV",
+      "name": "get_weather"
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 0,
+      "argumentsDelta": "{\"locat"
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 0,
+      "argumentsDelta": "ion\": \""
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 0,
+      "argumentsDelta": "Paris\"}"
+    },
+    {
+      "type": "tool_call_end",
+      "index": 0
+    },
+    {
+      "type": "tool_call_start",
+      "index": 1,
+      "id": "toolu_01RB4bNxGZuekBQX6LXoWUfA",
+      "name": "get_weather"
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 1,
+      "argumentsDelta": "{\"locat"
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 1,
+      "argumentsDelta": "ion\": \""
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 1,
+      "argumentsDelta": "London\"}"
+    },
+    {
+      "type": "tool_call_end",
+      "index": 1
+    },
+    {
+      "type": "usage",
+      "usage": {
+        "inputTokens": 671,
+        "outputTokens": 74,
+        "totalTokens": 745
+      }
+    },
+    {
+      "type": "message_end",
+      "finishReason": "tool_call"
+    }
+  ],
+  "nonStreaming": null
+}

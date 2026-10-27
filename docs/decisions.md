@@ -476,3 +476,111 @@ One line each; details in the task entries above. Task PRs: 1→#1, 2→#2,
   are inside the created `tests/fixtures/streams/` tree, which the Files block
   covers as `<case>.{sse|ndjson}` plus `<case>.json`; the extra twin files are
   recorded provenance for the embedded `nonStreaming` bodies).
+
+## v1.1 Task 3b: recorded stream fixtures
+
+- Owner-requested follow-up to Task 3: record the missing cases live instead of
+  relying on published captures. `scripts/record-streams.ts` now supports all
+  four providers (gated on `OPENAI_API_KEY`/`ANTHROPIC_API_KEY`/`GEMINI_API_KEY`;
+  base URLs from `<PROVIDER>_API_BASE_URL`, public defaults otherwise; model
+  overrides `RECORD_OPENAI_MODEL`/`RECORD_ANTHROPIC_MODEL`/`RECORD_GEMINI_MODEL`/
+  `RECORD_OLLAMA_MODEL`). `RECORD_PROVIDERS` and `RECORD_CASES` filter the run;
+  existing files are never overwritten unless `RECORD_OVERWRITE=1`.
+- `expectedEvents` are generated programmatically from the recorded bytes by
+  `scripts/stream-fixture-decode.ts` (verified: it reproduces every existing
+  fixture's expectedEvents exactly). Anything the Task 3 conventions don't
+  cover throws and prints `STOP:` instead of guessing.
+- Recorded this run (2026-10-27):
+  - `ollama/error` — qwen2.5:0.5b, ollama 0.40.11. A real mid-stream error:
+    HTTP 200, normal NDJSON chunks, then `{"error":"an error was encountered
+    while running the model: unexpected EOF"}` (docs.ollama.com/api/errors
+    shape). Trigger: the llama runner was stopped mid-generation
+    (`OLLAMA_MIDSTREAM_KILL`, default `docker exec ollama pkill -f
+    llama-server`). The wire carries no status/code; the canonical error is
+    `internal`/`500` — the same failure returned pre-stream would be an HTTP
+    500, so `kindFromStatus(500)` applies.
+  - `gemini/max_tokens` — gemini-3.5-flash-lite (`RECORD_GEMINI_MODEL`;
+    the script default `gemini-2.5-flash` now returns 404 "no longer
+    available to new users" on this API key). `finishReason: MAX_TOKENS`
+    mid-stream → canonical `length`. The `nonStreaming` twin matched on
+    message/finishReason/usage and is embedded.
+- Still omitted (recorded evidence impossible this run):
+  - `openai`: `parallel_tool_calls`, `after_tool_result`, `max_tokens`,
+    `error` — the key is set but the account has no credit: every case got a
+    pre-stream HTTP 429 (`credit_balance_exhausted`), which is the normal
+    JSON-error path, not a stream fixture.
+  - `anthropic`: `parallel_tool_calls`, `after_tool_result`, `max_tokens` —
+    same: pre-stream HTTP 400 (credit balance too low).
+  - `gemini/error`, `openai/error` — no deterministic way to make either
+    provider send an in-stream `{"error":…}` on a 2xx stream is known; every
+    error trigger probed (invalid tool configs, unsupported modalities,
+    exhausted quota) returned a pre-stream non-2xx. The script defines no
+    `error` case for them; fabricating or splicing bytes is not allowed.
+- Provenance note: `message_start`/`tool_call_start` keep the provider's
+  response-object IDs verbatim (`chatcmpl-…`, `msg_…`, `responseId`), as the
+  existing fixtures do. Only response bodies are recorded — no request
+  headers, API keys, org IDs or `request_id`/`x-request-id` values enter the
+  files.
+- Files outside the Files block: `scripts/record-streams.ts` extended for
+  openai/anthropic/gemini (owner-requested follow-up); split for the ~400-line
+  rule into `scripts/record-streams-cases.ts` (per-provider endpoints and case
+  definitions) and `scripts/stream-fixture-decode.ts` +
+  `scripts/stream-fixture-events.ts` (wire bytes → `expectedEvents` /
+  `nonStreaming` matching).
+
+## v1.1 Task 3b fix: OLLAMA_MIDSTREAM_KILL is opt-in
+
+- `OLLAMA_MIDSTREAM_KILL` no longer defaults to `docker exec ollama pkill -f
+  llama-server`. `npm run record:streams` never kills a process unless the
+  variable is explicitly set; without it the ollama `error` case is skipped
+  with a log line naming the variable.
+- When set, the command is run once, mid-stream (after the first stream lines
+  arrive), to induce a real in-stream error. `pkill -f llama-server` stops
+  EVERY model runner in the container — set it only against an Ollama
+  instance dedicated to recording.
+- Ollama fixture `source` now names the server version, matching the other
+  recorded fixtures: `recorded: ollama <version>, <model> (via npm run
+  record:streams<; note>)`. The script queries `GET /api/version` for it and
+  skips ollama entirely when the base URL doesn't answer.
+
+## v1.1 Task 3b fix: openai and anthropic recorded cheaply
+
+- The owner added $5 credit to both accounts and asked to spend as little as
+  possible. `record-streams.ts` gained `RECORD_TWINS` (restrict non-streaming
+  twin calls to the named cases; `RECORD_TWINS=max_tokens` here — tool-case
+  twins can't be embedded until Tasks 8–10) and now logs upstream request
+  counts per provider at the end of a run.
+- Model choice (one probe each, per the owner's budget): `gpt-4.1-nano` and
+  `claude-3-5-haiku-latest` each got exactly one request and returned HTTP 404
+  on these keys; fell back to `gpt-4o-mini` and `claude-haiku-4-5` (the other
+  owner-named candidates) — accepted.
+- Token caps: `max_tokens` case stays ≤16 (openai 5, anthropic 8); all other
+  recorded cases ≤200 — openai `parallel_tool_calls` gained `max_tokens:128`,
+  anthropic `parallel_tool_calls` dropped 512→192; `after_tool_result` was
+  already 64/128.
+- Recorded 2026-10-27 (raw bytes verbatim, `expectedEvents` generated by
+  `scripts/stream-fixture-decode.ts`; `source` now reads `recorded: <provider>
+  API, <model> (via npm run record:streams)`, the owner-requested format —
+  applied to openai/anthropic/gemini prefixes for uniformity with ollama):
+  - `openai/parallel_tool_calls` — gpt-4o-mini, two `get_weather` calls
+    (Paris, London), finish `tool_calls` → `tool_call`.
+  - `openai/after_tool_result` — gpt-4o-mini, text reply after the tool
+    result, finish `stop`.
+  - `openai/max_tokens` — gpt-4o-mini, `finish_reason:"length"` → `length`;
+    twin matched on message/finishReason/usage and is embedded.
+  - `anthropic/parallel_tool_calls` — claude-haiku-4-5, two `tool_use`
+    blocks (Paris, London), `stop_reason:"tool_use"` → `tool_call`.
+  - `anthropic/after_tool_result` — claude-haiku-4-5, text reply, `end_turn`
+    → `stop`.
+  - `anthropic/max_tokens` — claude-haiku-4-5, `stop_reason:"max_tokens"` →
+    `length`; twin matched and is embedded.
+- Upstream requests made (hard cap was 15 per provider): openai=5,
+  anthropic=5 (each: 1 failed model probe + 3 streamed calls + 1 twin).
+  Every case produced the expected shape on the first attempt — no prompt
+  retries were needed.
+- Still omitted: `openai/error` (no real in-stream trigger known — per the
+  owner, not attempted) and `gemini/error` (same; no Gemini case defined).
+- Files outside the Files block: none new — `scripts/record-streams.ts` and
+  `scripts/record-streams-cases.ts` were already declared in the Task 3b
+  entry; the `date` parameter they no longer use was removed from the three
+  provider setups and `providerSetups`.

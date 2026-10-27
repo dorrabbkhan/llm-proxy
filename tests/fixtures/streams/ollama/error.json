@@ -1,0 +1,85 @@
+{
+  "source": "recorded: ollama 0.40.11, qwen2.5:0.5b (via npm run record:streams; mid-stream error induced by stopping the llama runner mid-generation)",
+  "date": "2026-10-27",
+  "model": "qwen2.5:0.5b",
+  "expectedEvents": [
+    {
+      "type": "message_start",
+      "id": "call_0",
+      "model": "qwen2.5:0.5b"
+    },
+    {
+      "type": "text_delta",
+      "text": "1"
+    },
+    {
+      "type": "text_delta",
+      "text": "\n"
+    },
+    {
+      "type": "text_delta",
+      "text": "2"
+    },
+    {
+      "type": "text_delta",
+      "text": "\n"
+    },
+    {
+      "type": "text_delta",
+      "text": "3"
+    },
+    {
+      "type": "text_delta",
+      "text": "\n"
+    },
+    {
+      "type": "text_delta",
+      "text": "4"
+    },
+    {
+      "type": "text_delta",
+      "text": "\n"
+    },
+    {
+      "type": "text_delta",
+      "text": "5"
+    },
+    {
+      "type": "text_delta",
+      "text": "\n"
+    },
+    {
+      "type": "text_delta",
+      "text": "6"
+    },
+    {
+      "type": "text_delta",
+      "text": "\n"
+    },
+    {
+      "type": "text_delta",
+      "text": "7"
+    },
+    {
+      "type": "text_delta",
+      "text": "\n"
+    },
+    {
+      "type": "text_delta",
+      "text": "8"
+    },
+    {
+      "type": "text_delta",
+      "text": "\n"
+    },
+    {
+      "type": "error",
+      "error": {
+        "kind": "internal",
+        "status": 500,
+        "message": "an error was encountered while running the model: unexpected EOF"
+      }
+    }
+  ],
+  "nonStreaming": null
+}

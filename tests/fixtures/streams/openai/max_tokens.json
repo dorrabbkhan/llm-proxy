@@ -1,0 +1,80 @@
+{
+  "source": "recorded: openai API, gpt-4o-mini (via npm run record:streams)",
+  "date": "2026-10-27",
+  "model": "gpt-4o-mini",
+  "expectedEvents": [
+    {
+      "type": "message_start",
+      "id": "chatcmpl-EdgGaY23jWrza8Olooy4ARiwTwHpd",
+      "model": "gpt-4o-mini-2024-07-18"
+    },
+    {
+      "type": "text_delta",
+      "text": "Sure"
+    },
+    {
+      "type": "text_delta",
+      "text": "!"
+    },
+    {
+      "type": "text_delta",
+      "text": " Here"
+    },
+    {
+      "type": "text_delta",
+      "text": " are"
+    },
+    {
+      "type": "text_delta",
+      "text": " the"
+    },
+    {
+      "type": "usage",
+      "usage": {
+        "inputTokens": 15,
+        "outputTokens": 5,
+        "totalTokens": 20
+      }
+    },
+    {
+      "type": "message_end",
+      "finishReason": "length"
+    }
+  ],
+  "nonStreaming": {
+    "id": "chatcmpl-EdgGbp1sYFoTCnNL2gRDNAj09G55l",
+    "object": "chat.completion",
+    "created": 1793125973,
+    "model": "gpt-4o-mini-2024-07-18",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "Sure! Here are the",
+          "refusal": null,
+          "annotations": []
+        },
+        "logprobs": null,
+        "finish_reason": "length"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 15,
+      "completion_tokens": 5,
+      "total_tokens": 20,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "service_tier": "default",
+    "system_fingerprint": "fp_22ba900b6f"
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "source": "recorded: anthropic API, claude-haiku-4-5 (via npm run record:streams)",
+  "date": "2026-10-27",
+  "model": "claude-haiku-4-5",
+  "expectedEvents": [
+    {
+      "type": "message_start",
+      "id": "msg_011CgTDoCDJrTke96SJMSxgM",
+      "model": "claude-haiku-4-5-20251001"
+    },
+    {
+      "type": "text_delta",
+      "text": "The"
+    },
+    {
+      "type": "text_delta",
+      "text": " weather in Paris is"
+    },
+    {
+      "type": "text_delta",
+      "text": " currently **"
+    },
+    {
+      "type": "text_delta",
+      "text": "15 degrees"
+    },
+    {
+      "type": "text_delta",
+      "text": " Celsius** and"
+    },
+    {
+      "type": "text_delta",
+      "text": " **"
+    },
+    {
+      "type": "text_delta",
+      "text": "partly cloudy**."
+    },
+    {
+      "type": "usage",
+      "usage": {
+        "inputTokens": 647,
+        "outputTokens": 22,
+        "totalTokens": 669
+      }
+    },
+    {
+      "type": "message_end",
+      "finishReason": "stop"
+    }
+  ],
+  "nonStreaming": null
+}

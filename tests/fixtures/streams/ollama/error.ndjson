@@ -1,0 +1,17 @@
+{"model":"qwen2.5:0.5b","created_at":"2026-10-27T18:06:59.237960532Z","message":{"role":"assistant","content":"1"},"done":false}
+{"model":"qwen2.5:0.5b","created_at":"2026-10-27T18:06:59.249448952Z","message":{"role":"assistant","content":"\n"},"done":false}
+{"model":"qwen2.5:0.5b","created_at":"2026-10-27T18:06:59.260128826Z","message":{"role":"assistant","content":"2"},"done":false}
+{"model":"qwen2.5:0.5b","created_at":"2026-10-27T18:06:59.270981315Z","message":{"role":"assistant","content":"\n"},"done":false}
+{"model":"qwen2.5:0.5b","created_at":"2026-10-27T18:06:59.282395597Z","message":{"role":"assistant","content":"3"},"done":false}
+{"model":"qwen2.5:0.5b","created_at":"2026-10-27T18:06:59.2934235Z","message":{"role":"assistant","content":"\n"},"done":false}
+{"model":"qwen2.5:0.5b","created_at":"2026-10-27T18:06:59.305386849Z","message":{"role":"assistant","content":"4"},"done":false}
+{"model":"qwen2.5:0.5b","created_at":"2026-10-27T18:06:59.319063586Z","message":{"role":"assistant","content":"\n"},"done":false}
+{"model":"qwen2.5:0.5b","created_at":"2026-10-27T18:06:59.330732172Z","message":{"role":"assistant","content":"5"},"done":false}
+{"model":"qwen2.5:0.5b","created_at":"2026-10-27T18:06:59.342029312Z","message":{"role":"assistant","content":"\n"},"done":false}
+{"model":"qwen2.5:0.5b","created_at":"2026-10-27T18:06:59.35304496Z","message":{"role":"assistant","content":"6"},"done":false}
+{"model":"qwen2.5:0.5b","created_at":"2026-10-27T18:06:59.364011482Z","message":{"role":"assistant","content":"\n"},"done":false}
+{"model":"qwen2.5:0.5b","created_at":"2026-10-27T18:06:59.377237574Z","message":{"role":"assistant","content":"7"},"done":false}
+{"model":"qwen2.5:0.5b","created_at":"2026-10-27T18:06:59.390342844Z","message":{"role":"assistant","content":"\n"},"done":false}
+{"model":"qwen2.5:0.5b","created_at":"2026-10-27T18:06:59.40410851Z","message":{"role":"assistant","content":"8"},"done":false}
+{"model":"qwen2.5:0.5b","created_at":"2026-10-27T18:06:59.418606141Z","message":{"role":"assistant","content":"\n"},"done":false}
+{"error":"an error was encountered while running the model: unexpected EOF"}

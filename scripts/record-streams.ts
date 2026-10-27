@@ -1,138 +1,248 @@
 /**
- * record-streams.ts — record the Ollama stream fixtures (spec §4.1).
+ * record-streams.ts — record stream fixtures against real providers
+ * (spec §4.1).
  *
  *   npm run record:streams
  *
- * Opt-in, real network. Requires OLLAMA_API_BASE_URL to be reachable and a
- * tool-capable model in RECORD_OLLAMA_MODEL (default "qwen2.5:7b"). Writes
- * raw NDJSON bytes to tests/fixtures/streams/ollama/<case>.ndjson and the
- * non-streamed twin response to <case>.nonstreaming.json. The <case>.json
- * files (source/date/expectedEvents) are authored by hand from these bytes.
+ * Opt-in, real network. Providers run only when configured:
+ *   ollama    — OLLAMA_API_BASE_URL (default http://localhost:11434)
+ *   openai    — OPENAI_API_KEY (+ OPENAI_API_BASE_URL override)
+ *   anthropic — ANTHROPIC_API_KEY (+ ANTHROPIC_API_BASE_URL override)
+ *   gemini    — GEMINI_API_KEY (+ GEMINI_API_BASE_URL override)
+ *
+ * Filters / guards:
+ *   RECORD_PROVIDERS=ollama,gemini   — limit which providers run
+ *   RECORD_CASES=text,max_tokens     — limit which cases run
+ *   RECORD_TWINS=max_tokens          — limit which cases get a non-streaming
+ *                                      twin call (default: every non-error
+ *                                      case; RECORD_TWINS=none → no twins)
+ *   RECORD_OVERWRITE=1               — allow rewriting files that already
+ *                                      exist (default: never overwrite)
+ *   RECORD_<PROVIDER>_MODEL          — model override per provider
+ *   OLLAMA_MIDSTREAM_KILL            — opt-in shell command run ONCE,
+ *                                      mid-stream, to kill the running model
+ *                                      for the ollama "error" case (e.g.
+ *                                      `docker exec ollama pkill -f
+ *                                      llama-server`). No default: unset →
+ *                                      the error case is skipped and nothing
+ *                                      is killed. `pkill -f llama-server`
+ *                                      stops EVERY model runner in the
+ *                                      container — use it only on an Ollama
+ *                                      instance dedicated to recording.
+ *
+ * Writes raw wire bytes to tests/fixtures/streams/<provider>/<case>.sse
+ * (or .ndjson), the non-streamed twin to <case>.nonstreaming.json, and the
+ * <case>.json (source/date/model/expectedEvents/nonStreaming) generated
+ * from the bytes by stream-fixture-events.ts. Cases whose bytes don't
+ * match the case's claim (e.g. an "error" case that got a pre-stream
+ * non-2xx, or a 2xx stream with no in-stream error) are skipped, never
+ * written.
  */
-import { mkdirSync, writeFileSync } from "node:fs";
+import { exec } from "node:child_process";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { providerSetups, type ProviderRecording } from "./record-streams-cases";
+import {
+  buildFixtureJson,
+  FixtureAmbiguity,
+} from "./stream-fixture-events";
+import type { Provider } from "../src/transformers";
 
-const BASE_URL = process.env.OLLAMA_API_BASE_URL ?? "http://localhost:11434";
-const MODEL = process.env.RECORD_OLLAMA_MODEL ?? "qwen2.5:7b";
-const OUT_DIR = join(__dirname, "..", "tests", "fixtures", "streams", "ollama");
+const STREAMS_DIR = join(__dirname, "..", "tests", "fixtures", "streams");
+const DATE = new Date().toISOString().slice(0, 10);
 
-const GET_WEATHER = {
-  type: "function",
-  function: {
-    name: "get_weather",
-    description: "Get the current weather for a city",
-    parameters: {
-      type: "object",
-      properties: {
-        location: { type: "string", description: "City name" },
-      },
-      required: ["location"],
-    },
-  },
-};
+const RECORD_PROVIDERS = csv(process.env.RECORD_PROVIDERS);
+const RECORD_CASES = csv(process.env.RECORD_CASES);
+const RECORD_TWINS = csv(process.env.RECORD_TWINS);
+const OVERWRITE = process.env.RECORD_OVERWRITE === "1";
+const OLLAMA_MIDSTREAM_KILL = process.env.OLLAMA_MIDSTREAM_KILL;
 
-interface Case {
-  request: Record<string, unknown>;
+/** Live upstream requests issued per provider this run. */
+const requestCounts: Partial<Record<Provider, number>> = {};
+
+function csv(v: string | undefined): string[] | null {
+  if (!v) return null;
+  return v
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
 }
 
-const CASES: Record<string, Case> = {
-  text: {
-    request: {
-      messages: [
-        { role: "user", content: "Reply with exactly one word: hello" },
-      ],
-      options: { temperature: 0, num_predict: 32 },
-    },
-  },
-  tool_call: {
-    request: {
-      messages: [
-        { role: "user", content: "What is the weather in Paris?" },
-      ],
-      tools: [GET_WEATHER],
-      options: { temperature: 0 },
-    },
-  },
-  parallel_tool_calls: {
-    request: {
-      messages: [
-        {
-          role: "user",
-          content:
-            "What is the weather in Paris and what is the weather in London?",
-        },
-      ],
-      tools: [GET_WEATHER],
-      options: { temperature: 0 },
-    },
-  },
-  after_tool_result: {
-    request: {
-      messages: [
-        { role: "user", content: "What is the weather in Paris?" },
-        {
-          role: "assistant",
-          content: "",
-          tool_calls: [
-            {
-              id: "call_0",
-              function: {
-                index: 0,
-                name: "get_weather",
-                arguments: { location: "Paris" },
-              },
-            },
-          ],
-        },
-        { role: "tool", content: "15 degrees Celsius, partly cloudy" },
-      ],
-      tools: [GET_WEATHER],
-      options: { temperature: 0, num_predict: 64 },
-    },
-  },
-  max_tokens: {
-    request: {
-      messages: [{ role: "user", content: "Count from 1 to 50." }],
-      options: { temperature: 0, num_predict: 5 },
-    },
-  },
-};
-
-async function main(): Promise<void> {
-  let version = "unknown";
-  try {
-    const res = await fetch(`${BASE_URL}/api/version`);
-    if (res.ok) version = (await res.json()).version ?? version;
-  } catch {
-    // reported below on the first chat request
+async function post(
+  url: string,
+  headers: Record<string, string>,
+  body: unknown,
+  midStream?: { afterLines: number; action: string },
+): Promise<{ status: number; text: string }> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+  if (!res.body) return { status: res.status, text: await res.text() };
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  let fired = false;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    text += decoder.decode(value, { stream: true });
+    if (
+      midStream &&
+      !fired &&
+      text.split("\n").filter((l) => l.trim()).length >= midStream.afterLines
+    ) {
+      fired = true;
+      exec(midStream.action).unref();
+    }
   }
-  mkdirSync(OUT_DIR, { recursive: true });
-  console.log(`recording against ollama ${version} at ${BASE_URL}, model ${MODEL}`);
+  text += decoder.decode();
+  return { status: res.status, text };
+}
 
-  for (const [name, c] of Object.entries(CASES)) {
-    for (const stream of [true, false] as const) {
-      const body = {
-        model: MODEL,
-        stream,
-        ...(c.request as Record<string, unknown>),
-      };
-      const res = await fetch(`${BASE_URL}/api/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const text = await res.text();
-      if (stream) {
-        writeFileSync(join(OUT_DIR, `${name}.ndjson`), text);
-        console.log(`${name}.ndjson <- HTTP ${res.status} (${text.length} bytes)`);
-      } else {
-        writeFileSync(join(OUT_DIR, `${name}.nonstreaming.json`), text);
+function writeGuarded(path: string, contents: string): void {
+  if (existsSync(path) && !OVERWRITE) {
+    console.log(`  not overwriting ${path.split("tests/")[1]}`);
+    return;
+  }
+  writeFileSync(path, contents);
+}
+
+async function recordProvider(
+  provider: Provider,
+  rec: ProviderRecording,
+): Promise<void> {
+  mkdirSync(rec.dir, { recursive: true });
+  console.log(`recording ${provider} at ${rec.baseUrl}, model ${rec.model}`);
+  for (const [name, c] of Object.entries(rec.cases)) {
+    if (RECORD_CASES && !RECORD_CASES.includes(name)) continue;
+    const wirePath = join(rec.dir, `${name}.${rec.ext}`);
+    if (existsSync(wirePath) && !OVERWRITE) {
+      console.log(`  ${name}: exists on disk — skipped`);
+      continue;
+    }
+    if (c.midStreamAfterLines && !c.midStreamAction) {
+      console.log(
+        `  ${name}: skipped — needs OLLAMA_MIDSTREAM_KILL ` +
+          `(mid-stream kill command; nothing was killed)`,
+      );
+      continue;
+    }
+    const midStream =
+      c.midStreamAction && c.midStreamAfterLines
+        ? { afterLines: c.midStreamAfterLines, action: c.midStreamAction }
+        : undefined;
+    requestCounts[provider] = (requestCounts[provider] ?? 0) + 1;
+    const res = await post(
+      `${rec.baseUrl}${rec.streamPath(rec.model)}`,
+      rec.headers,
+      rec.body(rec.model, true, c.request),
+      midStream,
+    );
+    if (res.status < 200 || res.status >= 300) {
+      // A pre-stream non-2xx is the normal JSON-error path, never a
+      // stream fixture (plan Review Focus #4).
+      console.log(`  ${name}: HTTP ${res.status} before stream — skipped`);
+      continue;
+    }
+    const source =
+      rec.sourcePrefix + (c.sourceNote ?? "") + (rec.sourceSuffix ?? "");
+    let fixture;
+    try {
+      fixture = buildFixtureJson(
+        provider,
+        res.text,
+        rec.model,
+        source,
+        DATE,
+        undefined,
+      );
+    } catch (err) {
+      if (err instanceof FixtureAmbiguity) {
+        console.log(`STOP: ${provider}/${name}: ${err.message}`);
+        continue;
+      }
+      throw err;
+    }
+    const lastType = fixture.expectedEvents.at(-1)?.type;
+    if (c.expectInStreamError) {
+      if (lastType !== "error") {
         console.log(
-          `${name}.nonstreaming.json <- HTTP ${res.status} (${text.length} bytes)`,
+          `  ${name}: HTTP ${res.status} but no in-stream error — skipped`,
+        );
+        continue;
+      }
+    } else if (lastType === "error") {
+      console.log(
+        `STOP: ${provider}/${name}: stream ended in an error event for a non-error case`,
+      );
+      continue;
+    }
+
+    // Non-streaming twin (not for error cases — a non-stream call can't
+    // reproduce a mid-stream failure). RECORD_TWINS limits which cases
+    // pay for a twin call.
+    if (
+      !c.expectInStreamError &&
+      (!RECORD_TWINS || RECORD_TWINS.includes(name))
+    ) {
+      requestCounts[provider] = (requestCounts[provider] ?? 0) + 1;
+      const twin = await post(
+        `${rec.baseUrl}${(rec.twinPath ?? rec.streamPath)(rec.model)}`,
+        rec.headers,
+        rec.body(rec.model, false, c.request),
+      );
+      if (twin.status >= 200 && twin.status < 300) {
+        writeGuarded(join(rec.dir, `${name}.nonstreaming.json`), twin.text);
+        fixture = buildFixtureJson(
+          provider,
+          res.text,
+          rec.model,
+          source,
+          DATE,
+          JSON.parse(twin.text),
+        );
+      } else {
+        console.log(
+          `  ${name}: twin HTTP ${twin.status} — nonStreaming stays null`,
         );
       }
     }
+
+    writeGuarded(wirePath, res.text);
+    writeGuarded(
+      join(rec.dir, `${name}.json`),
+      JSON.stringify(fixture, null, 2) + "\n",
+    );
+    console.log(
+      `  ${name}.${rec.ext} <- HTTP ${res.status} (${res.text.length} bytes, ` +
+        `${fixture.expectedEvents.length} events, nonStreaming: ` +
+        `${fixture.nonStreaming === null ? "null" : "set"})`,
+    );
   }
+}
+
+async function main(): Promise<void> {
+  const setups = providerSetups(STREAMS_DIR, OLLAMA_MIDSTREAM_KILL);
+  for (const provider of [
+    "ollama",
+    "openai",
+    "anthropic",
+    "gemini",
+  ] as Provider[]) {
+    if (RECORD_PROVIDERS && !RECORD_PROVIDERS.includes(provider)) continue;
+    const rec = await setups[provider]();
+    if (typeof rec === "string") {
+      console.log(`${provider}: skipped (${rec})`);
+      continue;
+    }
+    await recordProvider(provider, rec);
+  }
+  const counts = (Object.keys(requestCounts) as Provider[])
+    .map((p) => `${p}=${requestCounts[p]}`)
+    .join(", ");
+  console.log(`upstream requests made: ${counts || "none"}`);
 }
 
 main().catch((err) => {

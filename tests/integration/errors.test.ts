@@ -727,12 +727,22 @@ describe("streaming refusal and unsupported gemini methods (spec §3.2)", () => 
   // three sources carry stream in the request body.
   const STREAM_BODY_SOURCES: Provider[] = ["openai", "anthropic", "ollama"];
 
+  // Providers whose createStreamDecoder/createStreamEncoder are live.
+  const STREAMING_ADAPTERS: ReadonlySet<Provider> = new Set([
+    "openai",
+    "anthropic",
+  ]);
+
   it.each(
     STREAM_BODY_SOURCES.flatMap((source) =>
       providers.map((target) => ({ source, target })),
-      // openai→openai streams for real since v1.1 Task 4 (spec §1.2 F1:
-      // 501 → 200 by design) — covered in tests/integration/stream.test.ts.
-    ).filter(({ source, target }) => !(source === "openai" && target === "openai")),
+      // Pairs where both adapters stream return real streams since
+      // v1.1 Tasks 4–5 (spec §1.2 F1: 501 → 200 by design) — covered in
+      // tests/integration/stream.test.ts.
+    ).filter(
+      ({ source, target }) =>
+        !(STREAMING_ADAPTERS.has(source) && STREAMING_ADAPTERS.has(target)),
+    ),
   )(
     "$source stream:true → 501 in source dialect, no upstream call ($target)",
     async ({ source, target }) => {

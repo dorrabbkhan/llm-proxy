@@ -10,22 +10,21 @@ import type {
   CanonicalImage,
   CanonicalModelList,
   ProviderAdapter,
-  StreamDecoder,
-  StreamEncoder,
-  StreamEncoderContext,
-  IdGenerator,
 } from "../../types/canonical.types";
 import {
   kindFromStatus,
   makeCanonicalError,
 } from "../../utils/canonical-error";
-import { NotSupportedError } from "../../utils/errors";
 import type {
   MessageCreateParams,
   Message,
   MessageParam,
   ContentBlock,
 } from "../../types/anthropic.types";
+import {
+  createStreamDecoder,
+  createStreamEncoder,
+} from "./anthropic.stream";
 
 type ImageMediaType = "image/jpeg" | "image/png" | "image/gif" | "image/webp";
 
@@ -165,6 +164,10 @@ export function fromCanonicalRequest(
     }),
   };
 
+  if (request.stream !== undefined) {
+    (result as { stream?: boolean }).stream = request.stream;
+  }
+
   return result;
 }
 
@@ -249,7 +252,9 @@ export function toCanonicalResponse(
   };
 }
 
-function mapFinishReason(reason: string | null): CanonicalFinishReason {
+export function mapFinishReason(
+  reason: string | null,
+): CanonicalFinishReason {
   switch (reason) {
     case "end_turn":
       return "stop";
@@ -332,7 +337,7 @@ export function fromCanonicalModelList(
   };
 }
 
-function mapToAnthropicStopReason(
+export function mapToAnthropicStopReason(
   reason: CanonicalFinishReason,
 ): "end_turn" | "max_tokens" | "tool_use" | null {
   switch (reason) {
@@ -385,21 +390,4 @@ export function fromCanonicalError(err: CanonicalError): unknown {
   };
 }
 
-// ============ STREAMING (stub — Task 5) ============
-
-export function createStreamDecoder(
-  _model: string,
-  _ids?: IdGenerator,
-): StreamDecoder {
-  throw new NotSupportedError(
-    'Streaming is not supported yet (planned for v1.1). Send "stream": false.',
-  );
-}
-
-export function createStreamEncoder(
-  _ctx: StreamEncoderContext<MessageCreateParams>,
-): StreamEncoder {
-  throw new NotSupportedError(
-    'Streaming is not supported yet (planned for v1.1). Send "stream": false.',
-  );
-}
+// Streaming lives in ./anthropic.stream — re-exported on the adapter above.

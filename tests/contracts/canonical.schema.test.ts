@@ -3,6 +3,7 @@ import { adapters, type Provider } from '../../src/transformers';
 import {
   canonicalRequestSchema,
   canonicalResponseSchema,
+  canonicalStreamEventSchema,
 } from '../../src/types/canonical.schema';
 
 /**
@@ -218,6 +219,62 @@ describe('Canonical schema contracts', () => {
         const providerRes = adapters[target].fromCanonicalResponse(canonical);
         expect(providerRes).toBeDefined();
       }
+    }
+  });
+});
+
+describe('Canonical stream event schema', () => {
+  it('every CanonicalStreamEvent variant parses', () => {
+    const events = [
+      { type: 'message_start', id: 'msg_1', model: 'gpt-4' },
+      { type: 'text_delta', text: 'hi' },
+      { type: 'tool_call_start', index: 0, id: 'call_0', name: 'f' },
+      { type: 'tool_call_delta', index: 0, argumentsDelta: '{"a":' },
+      { type: 'tool_call_end', index: 0 },
+      {
+        type: 'usage',
+        usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 },
+      },
+      { type: 'message_end', finishReason: 'stop' },
+      {
+        type: 'error',
+        error: { kind: 'upstream', status: 502, message: 'boom' },
+      },
+    ];
+
+    for (const event of events) {
+      const result = canonicalStreamEventSchema.safeParse(event);
+      if (!result.success) {
+        console.error(event, result.error.issues);
+      }
+      expect(result.success).toBe(true);
+    }
+  });
+
+  it('rejects a negative tool_call_delta index', () => {
+    expect(
+      canonicalStreamEventSchema.safeParse({
+        type: 'tool_call_delta',
+        index: -1,
+        argumentsDelta: '',
+      }).success
+    ).toBe(false);
+  });
+
+  it('toolChoice variants parse on canonical requests', () => {
+    const choices = [
+      'auto',
+      'none',
+      'required',
+      { type: 'function', function: { name: 'f' } },
+    ];
+    for (const toolChoice of choices) {
+      const result = canonicalRequestSchema.safeParse({
+        model: 'm',
+        messages: [{ role: 'user', content: 'hi' }],
+        toolChoice,
+      });
+      expect(result.success).toBe(true);
     }
   });
 });

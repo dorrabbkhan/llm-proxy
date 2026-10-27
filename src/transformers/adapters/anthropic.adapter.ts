@@ -10,11 +10,16 @@ import type {
   CanonicalImage,
   CanonicalModelList,
   ProviderAdapter,
+  StreamDecoder,
+  StreamEncoder,
+  StreamEncoderContext,
+  IdGenerator,
 } from "../../types/canonical.types";
 import {
   kindFromStatus,
   makeCanonicalError,
 } from "../../utils/canonical-error";
+import { NotSupportedError } from "../../utils/errors";
 import type {
   MessageCreateParams,
   Message,
@@ -33,6 +38,8 @@ export const anthropicAdapter: ProviderAdapter<MessageCreateParams, Message> = {
   fromCanonicalModelList,
   toCanonicalError,
   fromCanonicalError,
+  createStreamDecoder,
+  createStreamEncoder,
 };
 
 // ============ REQUEST: Anthropic → Canonical ============
@@ -376,4 +383,23 @@ export function fromCanonicalError(err: CanonicalError): unknown {
       message: err.message,
     },
   };
+}
+
+// ============ STREAMING (stub — Task 5) ============
+
+export function createStreamDecoder(
+  _model: string,
+  _ids?: IdGenerator,
+): StreamDecoder {
+  throw new NotSupportedError(
+    'Streaming is not supported yet (planned for v1.1). Send "stream": false.',
+  );
+}
+
+export function createStreamEncoder(
+  _ctx: StreamEncoderContext<MessageCreateParams>,
+): StreamEncoder {
+  throw new NotSupportedError(
+    'Streaming is not supported yet (planned for v1.1). Send "stream": false.',
+  );
 }

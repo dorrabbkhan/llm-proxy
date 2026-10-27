@@ -10,11 +10,16 @@ import type {
   CanonicalToolCall,
   CanonicalModelList,
   ProviderAdapter,
+  StreamDecoder,
+  StreamEncoder,
+  StreamEncoderContext,
+  IdGenerator,
 } from "../../types/canonical.types";
 import {
   kindFromStatus,
   makeCanonicalError,
 } from "../../utils/canonical-error";
+import { NotSupportedError } from "../../utils/errors";
 import type {
   ChatCompletionRequest,
   ChatCompletionResponse,
@@ -33,6 +38,8 @@ export const openaiAdapter: ProviderAdapter<
   fromCanonicalModelList,
   toCanonicalError,
   fromCanonicalError,
+  createStreamDecoder,
+  createStreamEncoder,
 };
 
 // ============ REQUEST: OpenAI → Canonical ============
@@ -484,4 +491,23 @@ export function fromCanonicalError(err: CanonicalError): unknown {
       code: err.kind,
     },
   };
+}
+
+// ============ STREAMING (stub — Task 4) ============
+
+export function createStreamDecoder(
+  _model: string,
+  _ids?: IdGenerator,
+): StreamDecoder {
+  throw new NotSupportedError(
+    'Streaming is not supported yet (planned for v1.1). Send "stream": false.',
+  );
+}
+
+export function createStreamEncoder(
+  _ctx: StreamEncoderContext<ChatCompletionRequest>,
+): StreamEncoder {
+  throw new NotSupportedError(
+    'Streaming is not supported yet (planned for v1.1). Send "stream": false.',
+  );
 }

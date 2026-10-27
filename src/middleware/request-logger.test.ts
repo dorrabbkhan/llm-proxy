@@ -25,8 +25,12 @@ function testApp() {
 }
 
 describe('requestLogger', () => {
-  it('exports a default middleware function', () => {
+  it('should export a middleware function', () => {
     expect(requestLogger).toBeDefined();
+    expect(typeof requestLogger).toBe('function');
+  });
+
+  it('should have correct arity for Express middleware', () => {
     expect(requestLogger.length).toBe(3);
   });
 

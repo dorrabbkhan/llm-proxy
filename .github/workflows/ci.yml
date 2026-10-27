@@ -2,6 +2,9 @@ name: CI
 
 on:
   pull_request:
+    # labeled/unlabeled re-run the check when the owner adds or removes
+    # the fixtures-approved label.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [main]
 
@@ -22,4 +25,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: ./scripts/check.sh
+        env:
+          # Owner-approved fixture/snapshot changes: only the owner applies
+          # the fixtures-approved label (agents never do). It skips only the
+          # fixture guard; typecheck, tests and build still run.
+          ALLOW_FIXTURE_CHANGE: ${{ contains(github.event.pull_request.labels.*.name, 'fixtures-approved') && '1' || '' }}
       - run: docker build .

@@ -243,4 +243,57 @@ describe('OpenAI Adapter', () => {
       expect(result.data?.[0]?.owned_by).toBe('babelgate');
     });
   });
+
+  describe('tools', () => {
+    it('openai toolChoice round trip', () => {
+      const choices = [
+        'auto',
+        'none',
+        'required',
+        { type: 'function', function: { name: 'get_weather' } },
+      ] as const;
+
+      for (const tool_choice of choices) {
+        const input = {
+          model: 'gpt-4',
+          messages: [{ role: 'user', content: 'Hi' }],
+          tool_choice,
+        } as ChatCompletionRequest;
+
+        const canonical = toCanonicalRequest(input);
+        expect(canonical.toolChoice).toEqual(tool_choice);
+
+        const restored = fromCanonicalRequest(canonical);
+        expect(restored.tool_choice).toEqual(tool_choice);
+      }
+    });
+
+    it('openai tools definitions pass through', () => {
+      const tools = [
+        {
+          type: 'function' as const,
+          function: {
+            name: 'get_weather',
+            description: 'Get current weather',
+            parameters: {
+              type: 'object',
+              properties: { location: { type: 'string' } },
+              required: ['location'],
+            },
+          },
+        },
+      ];
+      const input: ChatCompletionRequest = {
+        model: 'gpt-4',
+        messages: [{ role: 'user', content: 'Hi' }],
+        tools,
+      };
+
+      const canonical = toCanonicalRequest(input);
+      expect(canonical.tools).toEqual(tools);
+
+      const restored = fromCanonicalRequest(canonical);
+      expect(restored.tools).toEqual(tools);
+    });
+  });
 });

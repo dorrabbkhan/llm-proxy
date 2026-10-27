@@ -824,6 +824,61 @@ One line each; details in the task entries above. Task PRs: 1→#1, 2→#2,
     `content.parts` emits the same `upstream` "Upstream sent an
     undecodable stream chunk" error as the array-shape guards instead
     of being skipped.
+
+## v1.1 Task 8: tool calling for OpenAI and Ollama (non-streaming)
+
+Spec §3.4 rows implemented: OpenAI `tools[].function` ↔ canonical `tools`,
+`tool_choice` ↔ `toolChoice` (all four forms), `tool_calls`/`tool_call_id`
+already existed for messages and responses. Ollama `tools` pass through,
+`message.tool_calls` ↔ canonical `toolCalls` (arguments object ↔ JSON
+string), `role:"tool"` results ↔ `tool_name`, and the `toolChoice` gate.
+
+Ambiguities resolved (Ollama):
+- Call ids: wire `id` kept when present, `ids()` drawn when absent —
+  same rule as the stream decoder and "v1.1 Task 3" conventions. On
+  encode the adapter writes `id` and `function.index`, mirroring the
+  recorded Ollama 0.40.11 wire shape (the SDK type omits both fields).
+- `toCanonicalRequest` has no injected generator, so request-decode
+  generated ids come from a local `sequentialIds()` (`call_0`, `call_1`,…
+  in emission order) — deterministic and unique within the request.
+- `tool_name` pairing on decode: Ollama results carry only the tool's
+  name; each `role:"tool"` message is paired with the earliest
+  unconsumed earlier assistant call of that name (FIFO). An unmatched
+  tool message keeps `tool_name` as its `toolCallId` so the
+  information survives and a later Ollama encode fails with the
+  spec-required ValidationError naming it. On encode the lookup is by
+  canonical `toolCallId`; no match → ValidationError naming the id only.
+- `toolChoice`: `auto` (or absent) passes through; anything else throws
+  `ValidationError` → 400. The `<value>` in the message is the string
+  itself (`"required"`, `"none"`) or `JSON.stringify` of an object form,
+  e.g. `Ollama does not support tool_choice "{"type":"function",...}"`.
+- `finishReason`: `message.tool_calls` present → `tool_call` (the stream
+  decoder's `sawToolCalls` rule); `fromCanonicalResponse` encodes
+  canonical `tool_call` as `done:true, done_reason:"stop"` — what
+  recorded Ollama tool-call answers carry.
+- A string `arguments` on the wire passes through verbatim; objects are
+  `JSON.stringify`d; encode uses `parseToolArguments` (`{}` for empty,
+  `{ "_invalid_arguments": "<raw>" }` + a warn line without arguments).
+
+Ambiguities resolved (OpenAI): non-function entries in `tools`
+(e.g. `type:"custom"`) and `tool_choice` forms with no canonical
+equivalent (`allowed_tools`, `custom`) throw `ValidationError` naming
+the type rather than being silently dropped. `strict` on a function
+tool and other fields canonical cannot express are dropped — follow-up.
+
+Owner decision (2026-10-27, option a): mapping tools necessarily changed
+the recorded tool-dropping snapshot; the approval allowed updating
+exactly `Adapter golden fixtures > openai > request fixtures > tools →
+canonical matches snapshot 1` (gained `tools` only — the fixture carries
+no `tool_choice`). Updated via `npx vitest run
+tests/contracts/fixtures.test.ts -u -t '<exact test name>'` in its own
+commit `test: update tool snapshots (owner-approved, option a)`; no
+other snapshot entry and no fixture file changed.
+
+Files outside the Files block:
+`tests/contracts/__snapshots__/fixtures.test.ts.snap` (the one entry
+above, owner-approved) and `docs/decisions.md` (this entry).
+
 ## v1.1 Task 10: Gemini tools (non-streaming) + toGeminiSchema
 
 - Spec sections implemented: §3.4 Gemini row —

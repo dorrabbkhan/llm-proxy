@@ -8,12 +8,14 @@ import type {
   CanonicalErrorKind,
   CanonicalImage,
   CanonicalModelList,
+  CanonicalToolChoice,
   ProviderAdapter,
 } from "../../types/canonical.types";
 import {
   kindFromStatus,
   makeCanonicalError,
 } from "../../utils/canonical-error";
+import { ValidationError } from "../../utils/errors";
 import type {
   ChatCompletionRequest,
   ChatCompletionResponse,
@@ -86,7 +88,55 @@ export function toCanonicalRequest(
     },
     ...(request.stream === true && { stream: true }),
     ...(request.stream === false && { stream: false }),
+    ...(request.tools && { tools: toCanonicalTools(request.tools) }),
+    ...(request.tool_choice !== undefined && {
+      toolChoice: toCanonicalToolChoice(request.tool_choice),
+    }),
   };
+}
+
+function toCanonicalTools(
+  tools: NonNullable<ChatCompletionRequest["tools"]>,
+): CanonicalRequest["tools"] {
+  return tools.map((tool) => {
+    if (tool.type !== "function" || !("function" in tool)) {
+      throw new ValidationError(
+        `Unsupported OpenAI tool type "${String(tool.type)}"`,
+      );
+    }
+    return {
+      type: "function" as const,
+      function: {
+        name: tool.function.name,
+        ...(tool.function.description !== undefined && {
+          description: tool.function.description,
+        }),
+        ...(tool.function.parameters !== undefined && {
+          parameters: tool.function.parameters,
+        }),
+      },
+    };
+  });
+}
+
+function toCanonicalToolChoice(
+  choice: NonNullable<ChatCompletionRequest["tool_choice"]>,
+): CanonicalToolChoice {
+  if (choice === "auto" || choice === "none" || choice === "required") {
+    return choice;
+  }
+  if (
+    typeof choice === "object" &&
+    choice.type === "function" &&
+    typeof choice.function?.name === "string"
+  ) {
+    return { type: "function", function: { name: choice.function.name } };
+  }
+  throw new ValidationError(
+    `Unsupported OpenAI tool_choice "${
+      typeof choice === "object" ? String(choice.type) : String(choice)
+    }"`,
+  );
 }
 
 function convertToCanonicalMessage(
@@ -206,6 +256,24 @@ export function fromCanonicalRequest(
     if (c.presencePenalty !== undefined) {
       result.presence_penalty = c.presencePenalty;
     }
+  }
+
+  if (request.tools && request.tools.length > 0) {
+    result.tools = request.tools.map((tool) => ({
+      type: "function" as const,
+      function: {
+        name: tool.function.name,
+        ...(tool.function.description !== undefined && {
+          description: tool.function.description,
+        }),
+        ...(tool.function.parameters !== undefined && {
+          parameters: tool.function.parameters,
+        }),
+      },
+    }));
+  }
+  if (request.toolChoice !== undefined) {
+    result.tool_choice = request.toolChoice;
   }
 
   if (request.stream !== undefined) {

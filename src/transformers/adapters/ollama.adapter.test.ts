@@ -5,6 +5,8 @@ import {
   toCanonicalResponse,
   fromCanonicalResponse,
 } from "./ollama.adapter";
+import { sequentialIds } from "../../utils/ids";
+import { ValidationError } from "../../utils/errors";
 import type {
   CanonicalRequest,
   CanonicalResponse,
@@ -325,6 +327,231 @@ describe("Ollama Adapter", () => {
       expect(result.messages!.length).toBe(original.messages!.length);
       expect(result.options?.temperature).toBe(original.options?.temperature);
       expect(result.options?.num_predict).toBe(original.options?.num_predict);
+    });
+  });
+
+  describe("tools", () => {
+    it("ollama tools definitions pass through", () => {
+      const tools = [
+        {
+          type: "function",
+          function: {
+            name: "get_weather",
+            description: "Get current weather",
+            parameters: {
+              type: "object",
+              properties: { location: { type: "string" } },
+              required: ["location"],
+            },
+          },
+        },
+      ];
+      const input: OllamaChatRequest = {
+        model: "qwen2.5:0.5b",
+        messages: [{ role: "user", content: "Hi" }],
+        tools,
+      };
+
+      const canonical = toCanonicalRequest(input);
+      expect(canonical.tools).toEqual(tools);
+
+      const restored = fromCanonicalRequest(canonical);
+      expect(restored.tools).toEqual(tools);
+    });
+
+    it("ollama assistant tool_calls → canonical with generated IDs", () => {
+      const input = {
+        model: "qwen2.5:0.5b",
+        created_at: new Date(),
+        message: {
+          role: "assistant",
+          content: "",
+          tool_calls: [
+            {
+              function: {
+                index: 0,
+                name: "get_weather",
+                arguments: { location: "Paris" },
+              },
+            },
+            {
+              function: {
+                index: 1,
+                name: "get_weather",
+                arguments: { location: "London" },
+              },
+            },
+          ],
+        },
+        done: true,
+      } as unknown as OllamaChatResponse;
+
+      const result = toCanonicalResponse(
+        input,
+        "qwen2.5:0.5b",
+        sequentialIds(),
+      );
+
+      expect(result.message.toolCalls).toEqual([
+        {
+          id: "call_0",
+          type: "function",
+          function: {
+            name: "get_weather",
+            arguments: '{"location":"Paris"}',
+          },
+        },
+        {
+          id: "call_1",
+          type: "function",
+          function: {
+            name: "get_weather",
+            arguments: '{"location":"London"}',
+          },
+        },
+      ]);
+      expect(result.finishReason).toBe("tool_call");
+    });
+
+    it("ollama assistant tool_calls keep the wire id", () => {
+      const input = {
+        model: "qwen2.5:0.5b",
+        created_at: new Date(),
+        message: {
+          role: "assistant",
+          content: "",
+          tool_calls: [
+            {
+              id: "call_ls22t79s",
+              function: {
+                index: 0,
+                name: "get_weather",
+                arguments: { location: "Paris" },
+              },
+            },
+          ],
+        },
+        done: true,
+      } as unknown as OllamaChatResponse;
+
+      const result = toCanonicalResponse(
+        input,
+        "qwen2.5:0.5b",
+        sequentialIds(),
+      );
+
+      expect(result.message.toolCalls?.[0]?.id).toBe("call_ls22t79s");
+      expect(result.finishReason).toBe("tool_call");
+    });
+
+    it("ollama tool result carries tool_name from history", () => {
+      const input: CanonicalRequest = {
+        model: "qwen2.5:0.5b",
+        messages: [
+          { role: "user", content: "weather in Paris?" },
+          {
+            role: "assistant",
+            content: "",
+            toolCalls: [
+              {
+                id: "call_0",
+                type: "function",
+                function: {
+                  name: "get_weather",
+                  arguments: '{"location":"Paris"}',
+                },
+              },
+            ],
+          },
+          { role: "tool", content: "15 degrees", toolCallId: "call_0" },
+        ],
+      };
+
+      const result = fromCanonicalRequest(input);
+
+      const assistant = result.messages![1];
+      expect(assistant.role).toBe("assistant");
+      expect(assistant.tool_calls).toEqual([
+        {
+          id: "call_0",
+          function: {
+            index: 0,
+            name: "get_weather",
+            arguments: { location: "Paris" },
+          },
+        },
+      ]);
+      const toolMsg = result.messages![2];
+      expect(toolMsg.role).toBe("tool");
+      expect(toolMsg.content).toBe("15 degrees");
+      expect(toolMsg.tool_name).toBe("get_weather");
+    });
+
+    it("ollama tool message with no matching call is a ValidationError", () => {
+      const input: CanonicalRequest = {
+        model: "qwen2.5:0.5b",
+        messages: [
+          { role: "user", content: "hi" },
+          { role: "tool", content: "15 degrees", toolCallId: "call_9" },
+        ],
+      };
+
+      expect(() => fromCanonicalRequest(input)).toThrow(ValidationError);
+      expect(() => fromCanonicalRequest(input)).toThrow(/call_9/);
+    });
+
+    it("ollama rejects toolChoice required", () => {
+      const input: CanonicalRequest = {
+        model: "qwen2.5:0.5b",
+        messages: [{ role: "user", content: "Hi" }],
+        toolChoice: "required",
+      };
+
+      expect(() => fromCanonicalRequest(input)).toThrow(ValidationError);
+      expect(() => fromCanonicalRequest(input)).toThrow(
+        'Ollama does not support tool_choice "required"',
+      );
+    });
+
+    it("ollama rejects a function toolChoice with its JSON form", () => {
+      const input: CanonicalRequest = {
+        model: "qwen2.5:0.5b",
+        messages: [{ role: "user", content: "Hi" }],
+        toolChoice: {
+          type: "function",
+          function: { name: "get_weather" },
+        },
+      };
+
+      expect(() => fromCanonicalRequest(input)).toThrow(ValidationError);
+      expect(() => fromCanonicalRequest(input)).toThrow(
+        'Ollama does not support tool_choice "{"type":"function","function":{"name":"get_weather"}}"',
+      );
+    });
+
+    it("ollama invalid canonical arguments become the wrapper", () => {
+      const input: CanonicalResponse = {
+        id: "ollama-test",
+        model: "qwen2.5:0.5b",
+        message: {
+          role: "assistant",
+          content: "",
+          toolCalls: [
+            {
+              id: "call_0",
+              type: "function",
+              function: { name: "get_weather", arguments: "not json" },
+            },
+          ],
+        },
+        finishReason: "tool_call",
+      };
+
+      const result = fromCanonicalResponse(input);
+
+      expect(result.message.tool_calls?.[0]?.function.arguments).toEqual({
+        _invalid_arguments: "not json",
+      });
     });
   });
 });

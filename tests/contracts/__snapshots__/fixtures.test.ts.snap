@@ -229,6 +229,26 @@ exports[`Adapter golden fixtures > gemini > request fixtures > tools → canonic
     },
   ],
   "model": "gemini-pro",
+  "tools": [
+    {
+      "function": {
+        "description": "Get current weather",
+        "name": "get_weather",
+        "parameters": {
+          "properties": {
+            "location": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "location",
+          ],
+          "type": "object",
+        },
+      },
+      "type": "function",
+    },
+  ],
 }
 `;
 

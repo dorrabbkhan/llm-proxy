@@ -354,4 +354,124 @@ describe("stream encoders via the provider SDK", () => {
     expect(out).toContain("_invalid_arguments");
     expect(out).toContain("not-json");
   });
+
+  it("text between tool_call_start and tool_call_end closes before the tool block", async () => {
+    // A text_delta arriving while a tool call is still buffered opens a
+    // text block; Anthropic never overlaps content blocks, so the text
+    // block must stop before the tool_use block starts.
+    const events: CanonicalStreamEvent[] = [
+      { type: "message_start", id: "msg_1", model: "m" },
+      { type: "tool_call_start", index: 0, id: "toolu_a", name: "get_weather" },
+      {
+        type: "tool_call_delta",
+        index: 0,
+        argumentsDelta: '{"city":"Paris"}',
+      },
+      { type: "text_delta", text: "hi" },
+      { type: "tool_call_end", index: 0 },
+      { type: "message_end", finishReason: "tool_call" },
+    ];
+    currentBody = encodeAnthropic(events, ANTHROPIC_STREAMING_REQUEST);
+
+    // On the wire every content_block_start is preceded by the
+    // content_block_stop of any earlier block, and block indices are
+    // contiguous from 0.
+    const open = new Set<number>();
+    const startIndices: number[] = [];
+    for (const chunk of currentBody.split("\n\n")) {
+      const data = chunk
+        .split("\n")
+        .find((l) => l.startsWith("data: "))
+        ?.slice(6);
+      if (data === undefined) continue;
+      const event = JSON.parse(data) as { type: string; index?: number };
+      if (event.type === "content_block_start") {
+        expect(open.size).toBe(0);
+        open.add(event.index!);
+        startIndices.push(event.index!);
+      } else if (event.type === "content_block_stop") {
+        expect(open.has(event.index!)).toBe(true);
+        open.delete(event.index!);
+      }
+    }
+    expect(startIndices).toEqual([0, 1]);
+
+    const runner = anthropicClient().messages.stream(
+      ANTHROPIC_STREAM_PARAMS,
+    );
+    for await (const _event of runner) {
+      // consume the whole stream
+    }
+    const final = await runner.finalMessage();
+
+    expect(final.content.map((b) => b.type)).toEqual(["text", "tool_use"]);
+    expect(final.content[0]).toMatchObject({ type: "text", text: "hi" });
+    expect(final.content[1]).toMatchObject({
+      type: "tool_use",
+      id: "toolu_a",
+      name: "get_weather",
+      input: { city: "Paris" },
+    });
+  });
+
+  it("anthropic encoder writes nothing after a terminal event", () => {
+    const afterEnd = anthropicAdapter.createStreamEncoder({
+      sourceRequest: ANTHROPIC_STREAMING_REQUEST,
+      query: {},
+      requestedModel: "m",
+    });
+    afterEnd.encode({ type: "message_start", id: "msg_1", model: "m" });
+    afterEnd.encode({ type: "message_end", finishReason: "stop" });
+    expect(afterEnd.encode({ type: "text_delta", text: "late" })).toBe("");
+    expect(
+      afterEnd.encode({ type: "message_end", finishReason: "stop" }),
+    ).toBe("");
+    expect(afterEnd.end()).toBe("");
+
+    const afterError = anthropicAdapter.createStreamEncoder({
+      sourceRequest: ANTHROPIC_STREAMING_REQUEST,
+      query: {},
+      requestedModel: "m",
+    });
+    afterError.encode({
+      type: "error",
+      error: { kind: "upstream", status: 502, message: "boom" },
+    });
+    expect(afterError.encode({ type: "text_delta", text: "late" })).toBe("");
+    expect(
+      afterError.encode({ type: "message_end", finishReason: "stop" }),
+    ).toBe("");
+  });
+
+  it("anthropic SDK rejects on an error after message_start", async () => {
+    const events: CanonicalStreamEvent[] = [
+      { type: "message_start", id: "msg_1", model: "m" },
+      { type: "text_delta", text: "hi" },
+      {
+        type: "error",
+        error: { kind: "rate_limit", status: 429, message: "slow down" },
+      },
+    ];
+    currentBody = encodeAnthropic(events, ANTHROPIC_STREAMING_REQUEST);
+    const encodedType = (
+      JSON.parse(
+        currentBody
+          .split("event: error\n")[1]!
+          .split("\n")
+          .find((l) => l.startsWith("data: "))!
+          .slice(6),
+      ) as { error: { type: string } }
+    ).error.type;
+
+    const runner = anthropicClient().messages.stream(
+      ANTHROPIC_STREAM_PARAMS,
+    );
+    const err: unknown = await runner.finalMessage().then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+
+    expect(err).toBeInstanceOf(Anthropic.APIError);
+    expect((err as Anthropic.APIError).type).toBe(encodedType);
+  });
 });

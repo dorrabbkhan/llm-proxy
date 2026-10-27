@@ -248,17 +248,21 @@ export function createStreamDecoder(
  * deltas run inside an open text block; tool calls are buffered until
  * `tool_call_end`, then written as one `content_block_start{tool_use}` +
  * a single `input_json_delta` (the parsed arguments object, or the
- * `_invalid_arguments` wrapper) + `content_block_stop`. Content-block
- * indices are contiguous in emission order — the canonical tool `index`
- * keys the buffer but is not the wire index. `usage` is held into the
- * closing `message_delta`, followed by `message_stop`; `error` becomes
- * `event: error` via `fromCanonicalError`.
+ * `_invalid_arguments` wrapper) + `content_block_stop` — an open text
+ * block stops first, since Anthropic never overlaps content blocks.
+ * Content-block indices are contiguous in emission order — the
+ * canonical tool `index` keys the buffer but is not the wire index.
+ * `usage` is held into the closing `message_delta`, followed by
+ * `message_stop`; `error` becomes `event: error` via
+ * `fromCanonicalError`. `message_end` and `error` are terminal: any
+ * event after them encodes to nothing.
  */
 export function createStreamEncoder(
   ctx: StreamEncoderContext<MessageCreateParams>,
 ): StreamEncoder {
   let nextBlockIndex = 0;
   let openTextIndex: number | undefined;
+  let finished = false;
   let usage: CanonicalUsage | undefined;
   const calls = new Map<number, { id: string; name: string; args: string }>();
 
@@ -278,6 +282,7 @@ export function createStreamEncoder(
   return {
     contentType: "text/event-stream",
     encode(event) {
+      if (finished) return "";
       switch (event.type) {
         case "message_start":
           return sse("message_start", {
@@ -336,8 +341,10 @@ export function createStreamEncoder(
               "Tool call arguments are not valid JSON; sending _invalid_arguments wrapper",
             );
           }
+          const out = closeText();
           const index = nextBlockIndex++;
           return (
+            out +
             sse("content_block_start", {
               type: "content_block_start",
               index,
@@ -366,6 +373,7 @@ export function createStreamEncoder(
           usage = event.usage;
           return "";
         case "message_end":
+          finished = true;
           return (
             closeText() +
             sse("message_delta", {
@@ -384,6 +392,7 @@ export function createStreamEncoder(
             sse("message_stop", { type: "message_stop" })
           );
         case "error":
+          finished = true;
           return (
             closeText() +
             formatSse(

@@ -666,3 +666,9 @@ One line each; details in the task entries above. Task PRs: 1→#1, 2→#2,
   STREAMING_ADAPTERS set (openai + anthropic) — replaced rows:
   anthropic→anthropic, anthropic→openai, openai→anthropic, each now
   covered by a named case in `tests/integration/stream.test.ts`.
+- Fix round: the encoder's `tool_call_end` now calls `closeText()`
+  before emitting `content_block_start{tool_use}` — a text_delta that
+  arrived while a call was buffered used to leave its block open across
+  the tool block (Anthropic never overlaps content blocks); and
+  `message_end`/`error` are terminal — `encode()` writes nothing after
+  them.

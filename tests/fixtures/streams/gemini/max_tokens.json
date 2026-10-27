@@ -1,0 +1,63 @@
+{
+  "source": "recorded: gemini API, gemini-3.5-flash-lite, 2026-10-27",
+  "date": "2026-10-27",
+  "model": "gemini-3.5-flash-lite",
+  "expectedEvents": [
+    {
+      "type": "message_start",
+      "id": "R-jgatGmEYCDvdIPjszVwAU",
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "type": "text_delta",
+      "text": "1,"
+    },
+    {
+      "type": "text_delta",
+      "text": " 2"
+    },
+    {
+      "type": "usage",
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 4,
+        "totalTokens": 14
+      }
+    },
+    {
+      "type": "message_end",
+      "finishReason": "length"
+    }
+  ],
+  "nonStreaming": {
+    "candidates": [
+      {
+        "content": {
+          "parts": [
+            {
+              "text": "1, 2",
+              "thoughtSignature": "EmAKXgFpFH0T8DFM32ZBoAcBowQ9DYivaJ59QbxOKd+8hU/AGLPR7YMc+iG1RSfcXLtF/w9zfJT5CgrXTaVvORbtaQgRcfd2Hp1yBu1evgzGyFUuGxCxMVFXgqAH/N+AbIQ="
+            }
+          ],
+          "role": "model"
+        },
+        "finishReason": "MAX_TOKENS",
+        "index": 0
+      }
+    ],
+    "usageMetadata": {
+      "promptTokenCount": 10,
+      "candidatesTokenCount": 4,
+      "totalTokenCount": 14,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 10
+        }
+      ],
+      "serviceTier": "standard"
+    },
+    "modelVersion": "gemini-3.5-flash-lite",
+    "responseId": "a-jgao_oNvifkdUP5oy70A0"
+  }
+}

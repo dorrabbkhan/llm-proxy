@@ -1,0 +1,40 @@
+{
+  "source": "https://github.com/googleapis/js-genai/blob/main/test/system/recordings/Chats_Tests_chats_function_calling_Google_AI_with_function_calling_stream.json (recorded streamGenerateContent?alt=sse response; data payload verbatim, SSE framing re-serialized from the recording's bodySegments)",
+  "date": "2026-10-27",
+  "model": "gemini-2.0-flash",
+  "expectedEvents": [
+    {
+      "type": "message_start",
+      "id": "xtSfaIRs8_Sf2Q-skYe5Dg",
+      "model": "gemini-2.0-flash"
+    },
+    {
+      "type": "tool_call_start",
+      "index": 0,
+      "id": "call_0",
+      "name": "customDivide"
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 0,
+      "argumentsDelta": "{\"denominator\": 2,\"numerator\": 100}"
+    },
+    {
+      "type": "tool_call_end",
+      "index": 0
+    },
+    {
+      "type": "usage",
+      "usage": {
+        "inputTokens": 21,
+        "outputTokens": 6,
+        "totalTokens": 27
+      }
+    },
+    {
+      "type": "message_end",
+      "finishReason": "tool_call"
+    }
+  ],
+  "nonStreaming": null
+}

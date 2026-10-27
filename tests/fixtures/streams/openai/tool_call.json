@@ -1,0 +1,811 @@
+{
+  "source": "https://github.com/openai/openai-go/blob/main/streamaccumulator_test.go mockResponseBody (recorded gpt-4o-2024-05-13 stream; verbatim except the second synthetic 'choices:[]' usage chunk, which the SDK authors added for a token-details accumulator test \u2014 real OpenAI streams emit exactly one usage chunk)",
+  "date": "2026-10-27",
+  "model": "gpt-4o-2024-05-13",
+  "expectedEvents": [
+    {
+      "type": "message_start",
+      "id": "chatcmpl-A3Tguz3LSXTHBTY2NAPBCSyfBltxF",
+      "model": "gpt-4o-2024-05-13"
+    },
+    {
+      "type": "text_delta",
+      "text": "Let's"
+    },
+    {
+      "type": "text_delta",
+      "text": " take"
+    },
+    {
+      "type": "text_delta",
+      "text": " a"
+    },
+    {
+      "type": "text_delta",
+      "text": " journey"
+    },
+    {
+      "type": "text_delta",
+      "text": " to"
+    },
+    {
+      "type": "text_delta",
+      "text": " the"
+    },
+    {
+      "type": "text_delta",
+      "text": " beautiful"
+    },
+    {
+      "type": "text_delta",
+      "text": " island"
+    },
+    {
+      "type": "text_delta",
+      "text": " of"
+    },
+    {
+      "type": "text_delta",
+      "text": " Sant"
+    },
+    {
+      "type": "text_delta",
+      "text": "orini"
+    },
+    {
+      "type": "text_delta",
+      "text": " in"
+    },
+    {
+      "type": "text_delta",
+      "text": " Greece"
+    },
+    {
+      "type": "text_delta",
+      "text": ".\n\n"
+    },
+    {
+      "type": "text_delta",
+      "text": "Sant"
+    },
+    {
+      "type": "text_delta",
+      "text": "orini"
+    },
+    {
+      "type": "text_delta",
+      "text": " is"
+    },
+    {
+      "type": "text_delta",
+      "text": " a"
+    },
+    {
+      "type": "text_delta",
+      "text": " gem"
+    },
+    {
+      "type": "text_delta",
+      "text": " in"
+    },
+    {
+      "type": "text_delta",
+      "text": " the"
+    },
+    {
+      "type": "text_delta",
+      "text": " A"
+    },
+    {
+      "type": "text_delta",
+      "text": "ege"
+    },
+    {
+      "type": "text_delta",
+      "text": "an"
+    },
+    {
+      "type": "text_delta",
+      "text": " Sea"
+    },
+    {
+      "type": "text_delta",
+      "text": ","
+    },
+    {
+      "type": "text_delta",
+      "text": " known"
+    },
+    {
+      "type": "text_delta",
+      "text": " for"
+    },
+    {
+      "type": "text_delta",
+      "text": " its"
+    },
+    {
+      "type": "text_delta",
+      "text": " stunning"
+    },
+    {
+      "type": "text_delta",
+      "text": " sunsets"
+    },
+    {
+      "type": "text_delta",
+      "text": ","
+    },
+    {
+      "type": "text_delta",
+      "text": " white"
+    },
+    {
+      "type": "text_delta",
+      "text": "-w"
+    },
+    {
+      "type": "text_delta",
+      "text": "ashed"
+    },
+    {
+      "type": "text_delta",
+      "text": " buildings"
+    },
+    {
+      "type": "text_delta",
+      "text": ","
+    },
+    {
+      "type": "text_delta",
+      "text": " and"
+    },
+    {
+      "type": "text_delta",
+      "text": " crystal"
+    },
+    {
+      "type": "text_delta",
+      "text": "-clear"
+    },
+    {
+      "type": "text_delta",
+      "text": " waters"
+    },
+    {
+      "type": "text_delta",
+      "text": "."
+    },
+    {
+      "type": "text_delta",
+      "text": " The"
+    },
+    {
+      "type": "text_delta",
+      "text": " island"
+    },
+    {
+      "type": "text_delta",
+      "text": "'s"
+    },
+    {
+      "type": "text_delta",
+      "text": " rugged"
+    },
+    {
+      "type": "text_delta",
+      "text": " landscape"
+    },
+    {
+      "type": "text_delta",
+      "text": " is"
+    },
+    {
+      "type": "text_delta",
+      "text": " the"
+    },
+    {
+      "type": "text_delta",
+      "text": " result"
+    },
+    {
+      "type": "text_delta",
+      "text": " of"
+    },
+    {
+      "type": "text_delta",
+      "text": " a"
+    },
+    {
+      "type": "text_delta",
+      "text": " volcanic"
+    },
+    {
+      "type": "text_delta",
+      "text": " eruption"
+    },
+    {
+      "type": "text_delta",
+      "text": " that"
+    },
+    {
+      "type": "text_delta",
+      "text": " took"
+    },
+    {
+      "type": "text_delta",
+      "text": " place"
+    },
+    {
+      "type": "text_delta",
+      "text": " around"
+    },
+    {
+      "type": "text_delta",
+      "text": " "
+    },
+    {
+      "type": "text_delta",
+      "text": "3"
+    },
+    {
+      "type": "text_delta",
+      "text": ","
+    },
+    {
+      "type": "text_delta",
+      "text": "600"
+    },
+    {
+      "type": "text_delta",
+      "text": " years"
+    },
+    {
+      "type": "text_delta",
+      "text": " ago"
+    },
+    {
+      "type": "text_delta",
+      "text": ","
+    },
+    {
+      "type": "text_delta",
+      "text": " which"
+    },
+    {
+      "type": "text_delta",
+      "text": " gave"
+    },
+    {
+      "type": "text_delta",
+      "text": " Sant"
+    },
+    {
+      "type": "text_delta",
+      "text": "orini"
+    },
+    {
+      "type": "text_delta",
+      "text": " its"
+    },
+    {
+      "type": "text_delta",
+      "text": " distinct"
+    },
+    {
+      "type": "text_delta",
+      "text": " cal"
+    },
+    {
+      "type": "text_delta",
+      "text": "dera"
+    },
+    {
+      "type": "text_delta",
+      "text": "."
+    },
+    {
+      "type": "text_delta",
+      "text": " When"
+    },
+    {
+      "type": "text_delta",
+      "text": " you"
+    },
+    {
+      "type": "text_delta",
+      "text": " visit"
+    },
+    {
+      "type": "text_delta",
+      "text": " the"
+    },
+    {
+      "type": "text_delta",
+      "text": " island"
+    },
+    {
+      "type": "text_delta",
+      "text": ","
+    },
+    {
+      "type": "text_delta",
+      "text": " you"
+    },
+    {
+      "type": "text_delta",
+      "text": " can't"
+    },
+    {
+      "type": "text_delta",
+      "text": " miss"
+    },
+    {
+      "type": "text_delta",
+      "text": " the"
+    },
+    {
+      "type": "text_delta",
+      "text": " picturesque"
+    },
+    {
+      "type": "text_delta",
+      "text": " town"
+    },
+    {
+      "type": "text_delta",
+      "text": " of"
+    },
+    {
+      "type": "text_delta",
+      "text": " O"
+    },
+    {
+      "type": "text_delta",
+      "text": "ia"
+    },
+    {
+      "type": "text_delta",
+      "text": ","
+    },
+    {
+      "type": "text_delta",
+      "text": " perched"
+    },
+    {
+      "type": "text_delta",
+      "text": " high"
+    },
+    {
+      "type": "text_delta",
+      "text": " on"
+    },
+    {
+      "type": "text_delta",
+      "text": " the"
+    },
+    {
+      "type": "text_delta",
+      "text": " cliffs"
+    },
+    {
+      "type": "text_delta",
+      "text": " with"
+    },
+    {
+      "type": "text_delta",
+      "text": " its"
+    },
+    {
+      "type": "text_delta",
+      "text": " narrow"
+    },
+    {
+      "type": "text_delta",
+      "text": " streets"
+    },
+    {
+      "type": "text_delta",
+      "text": ","
+    },
+    {
+      "type": "text_delta",
+      "text": " blue"
+    },
+    {
+      "type": "text_delta",
+      "text": "-dom"
+    },
+    {
+      "type": "text_delta",
+      "text": "ed"
+    },
+    {
+      "type": "text_delta",
+      "text": " churches"
+    },
+    {
+      "type": "text_delta",
+      "text": ","
+    },
+    {
+      "type": "text_delta",
+      "text": " and"
+    },
+    {
+      "type": "text_delta",
+      "text": " panoramic"
+    },
+    {
+      "type": "text_delta",
+      "text": " views"
+    },
+    {
+      "type": "text_delta",
+      "text": " of"
+    },
+    {
+      "type": "text_delta",
+      "text": " the"
+    },
+    {
+      "type": "text_delta",
+      "text": " sea"
+    },
+    {
+      "type": "text_delta",
+      "text": "."
+    },
+    {
+      "type": "text_delta",
+      "text": " F"
+    },
+    {
+      "type": "text_delta",
+      "text": "ira"
+    },
+    {
+      "type": "text_delta",
+      "text": ","
+    },
+    {
+      "type": "text_delta",
+      "text": " the"
+    },
+    {
+      "type": "text_delta",
+      "text": " island"
+    },
+    {
+      "type": "text_delta",
+      "text": "'s"
+    },
+    {
+      "type": "text_delta",
+      "text": " capital"
+    },
+    {
+      "type": "text_delta",
+      "text": ","
+    },
+    {
+      "type": "text_delta",
+      "text": " is"
+    },
+    {
+      "type": "text_delta",
+      "text": " buzzing"
+    },
+    {
+      "type": "text_delta",
+      "text": " with"
+    },
+    {
+      "type": "text_delta",
+      "text": " life"
+    },
+    {
+      "type": "text_delta",
+      "text": ","
+    },
+    {
+      "type": "text_delta",
+      "text": " offering"
+    },
+    {
+      "type": "text_delta",
+      "text": " a"
+    },
+    {
+      "type": "text_delta",
+      "text": " variety"
+    },
+    {
+      "type": "text_delta",
+      "text": " of"
+    },
+    {
+      "type": "text_delta",
+      "text": " shops"
+    },
+    {
+      "type": "text_delta",
+      "text": ","
+    },
+    {
+      "type": "text_delta",
+      "text": " restaurants"
+    },
+    {
+      "type": "text_delta",
+      "text": ","
+    },
+    {
+      "type": "text_delta",
+      "text": " and"
+    },
+    {
+      "type": "text_delta",
+      "text": " cafes"
+    },
+    {
+      "type": "text_delta",
+      "text": "."
+    },
+    {
+      "type": "text_delta",
+      "text": " Don't"
+    },
+    {
+      "type": "text_delta",
+      "text": " forget"
+    },
+    {
+      "type": "text_delta",
+      "text": " to"
+    },
+    {
+      "type": "text_delta",
+      "text": " explore"
+    },
+    {
+      "type": "text_delta",
+      "text": " the"
+    },
+    {
+      "type": "text_delta",
+      "text": " archaeological"
+    },
+    {
+      "type": "text_delta",
+      "text": " site"
+    },
+    {
+      "type": "text_delta",
+      "text": " of"
+    },
+    {
+      "type": "text_delta",
+      "text": " Ak"
+    },
+    {
+      "type": "text_delta",
+      "text": "rot"
+    },
+    {
+      "type": "text_delta",
+      "text": "iri"
+    },
+    {
+      "type": "text_delta",
+      "text": ","
+    },
+    {
+      "type": "text_delta",
+      "text": " an"
+    },
+    {
+      "type": "text_delta",
+      "text": " ancient"
+    },
+    {
+      "type": "text_delta",
+      "text": " M"
+    },
+    {
+      "type": "text_delta",
+      "text": "ino"
+    },
+    {
+      "type": "text_delta",
+      "text": "an"
+    },
+    {
+      "type": "text_delta",
+      "text": " city"
+    },
+    {
+      "type": "text_delta",
+      "text": " preserved"
+    },
+    {
+      "type": "text_delta",
+      "text": " in"
+    },
+    {
+      "type": "text_delta",
+      "text": " volcanic"
+    },
+    {
+      "type": "text_delta",
+      "text": " ash"
+    },
+    {
+      "type": "text_delta",
+      "text": ","
+    },
+    {
+      "type": "text_delta",
+      "text": " often"
+    },
+    {
+      "type": "text_delta",
+      "text": " referred"
+    },
+    {
+      "type": "text_delta",
+      "text": " to"
+    },
+    {
+      "type": "text_delta",
+      "text": " as"
+    },
+    {
+      "type": "text_delta",
+      "text": " the"
+    },
+    {
+      "type": "text_delta",
+      "text": " \""
+    },
+    {
+      "type": "text_delta",
+      "text": "Pom"
+    },
+    {
+      "type": "text_delta",
+      "text": "pe"
+    },
+    {
+      "type": "text_delta",
+      "text": "ii"
+    },
+    {
+      "type": "text_delta",
+      "text": " of"
+    },
+    {
+      "type": "text_delta",
+      "text": " the"
+    },
+    {
+      "type": "text_delta",
+      "text": " A"
+    },
+    {
+      "type": "text_delta",
+      "text": "ege"
+    },
+    {
+      "type": "text_delta",
+      "text": "an"
+    },
+    {
+      "type": "text_delta",
+      "text": ".\"\n\n"
+    },
+    {
+      "type": "text_delta",
+      "text": "Now"
+    },
+    {
+      "type": "text_delta",
+      "text": ","
+    },
+    {
+      "type": "text_delta",
+      "text": " let's"
+    },
+    {
+      "type": "text_delta",
+      "text": " check"
+    },
+    {
+      "type": "text_delta",
+      "text": " the"
+    },
+    {
+      "type": "text_delta",
+      "text": " weather"
+    },
+    {
+      "type": "text_delta",
+      "text": " in"
+    },
+    {
+      "type": "text_delta",
+      "text": " Sant"
+    },
+    {
+      "type": "text_delta",
+      "text": "orini"
+    },
+    {
+      "type": "text_delta",
+      "text": "."
+    },
+    {
+      "type": "tool_call_start",
+      "index": 0,
+      "id": "call_FXoAjBUMcVv1k40fficJ9cSs",
+      "name": "get_weather"
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 0,
+      "argumentsDelta": "{\""
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 0,
+      "argumentsDelta": "location"
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 0,
+      "argumentsDelta": "\":\""
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 0,
+      "argumentsDelta": "Sant"
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 0,
+      "argumentsDelta": "orini"
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 0,
+      "argumentsDelta": ","
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 0,
+      "argumentsDelta": " Greece"
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 0,
+      "argumentsDelta": "\"}"
+    },
+    {
+      "type": "tool_call_end",
+      "index": 0
+    },
+    {
+      "type": "usage",
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 100,
+        "totalTokens": 110
+      }
+    },
+    {
+      "type": "message_end",
+      "finishReason": "tool_call"
+    }
+  ],
+  "nonStreaming": null
+}

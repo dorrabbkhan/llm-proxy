@@ -1,0 +1,145 @@
+{
+  "source": "recorded: ollama 0.40.11, qwen2.5:0.5b (via npm run record:streams)",
+  "date": "2026-10-27",
+  "model": "qwen2.5:0.5b",
+  "expectedEvents": [
+    {
+      "type": "message_start",
+      "id": "call_0",
+      "model": "qwen2.5:0.5b"
+    },
+    {
+      "type": "text_delta",
+      "text": "The"
+    },
+    {
+      "type": "text_delta",
+      "text": " current"
+    },
+    {
+      "type": "text_delta",
+      "text": " weather"
+    },
+    {
+      "type": "text_delta",
+      "text": " in"
+    },
+    {
+      "type": "text_delta",
+      "text": " Paris"
+    },
+    {
+      "type": "text_delta",
+      "text": " is"
+    },
+    {
+      "type": "text_delta",
+      "text": " "
+    },
+    {
+      "type": "text_delta",
+      "text": "1"
+    },
+    {
+      "type": "text_delta",
+      "text": "5"
+    },
+    {
+      "type": "text_delta",
+      "text": " degrees"
+    },
+    {
+      "type": "text_delta",
+      "text": " Celsius"
+    },
+    {
+      "type": "text_delta",
+      "text": " with"
+    },
+    {
+      "type": "text_delta",
+      "text": " partly"
+    },
+    {
+      "type": "text_delta",
+      "text": " cloudy"
+    },
+    {
+      "type": "text_delta",
+      "text": " skies"
+    },
+    {
+      "type": "text_delta",
+      "text": "."
+    },
+    {
+      "type": "text_delta",
+      "text": " It"
+    },
+    {
+      "type": "text_delta",
+      "text": "'s"
+    },
+    {
+      "type": "text_delta",
+      "text": " a"
+    },
+    {
+      "type": "text_delta",
+      "text": " nice"
+    },
+    {
+      "type": "text_delta",
+      "text": " day"
+    },
+    {
+      "type": "text_delta",
+      "text": " to"
+    },
+    {
+      "type": "text_delta",
+      "text": " explore"
+    },
+    {
+      "type": "text_delta",
+      "text": " the"
+    },
+    {
+      "type": "text_delta",
+      "text": " city"
+    },
+    {
+      "type": "text_delta",
+      "text": "!"
+    },
+    {
+      "type": "usage",
+      "usage": {
+        "inputTokens": 201,
+        "outputTokens": 27,
+        "totalTokens": 228
+      }
+    },
+    {
+      "type": "message_end",
+      "finishReason": "stop"
+    }
+  ],
+  "nonStreaming": {
+    "model": "qwen2.5:0.5b",
+    "created_at": "2026-10-27T15:28:30.242537748Z",
+    "message": {
+      "role": "assistant",
+      "content": "The current weather in Paris is 15 degrees Celsius with partly cloudy skies. It's a nice day to explore the city!"
+    },
+    "done": true,
+    "done_reason": "stop",
+    "total_duration": 311150857,
+    "load_duration": 1151952,
+    "prompt_eval_count": 201,
+    "prompt_eval_cached_count": 200,
+    "prompt_eval_duration": 10633000,
+    "eval_count": 27,
+    "eval_duration": 295399000
+  }
+}

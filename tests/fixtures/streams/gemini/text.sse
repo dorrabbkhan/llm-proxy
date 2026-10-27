@@ -1,0 +1,2 @@
+data: {"candidates": [{"content": {"parts": [{"text": "Paris"}],"role": "model"},"finishReason": "STOP","index": 0}],"usageMetadata": {"promptTokenCount": 11,"candidatesTokenCount": 1,"totalTokenCount": 45,"promptTokensDetails": [{"modality": "TEXT","tokenCount": 11}],"thoughtsTokenCount": 33},"modelVersion": "gemini-2.5-flash","responseId": "yFWYabnBB8Wg1e8P3ZTdiAY"}
+

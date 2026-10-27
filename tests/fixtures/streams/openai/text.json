@@ -1,0 +1,21 @@
+{
+  "source": "https://platform.openai.com/docs/api-reference/chat-streaming (documented stream example; the docs truncate it \u2014 ': Intermediate chat completion chunks omitted.' line kept verbatim, no intermediate chunks invented; [DONE] framing as documented)",
+  "date": "2026-10-27",
+  "model": "gpt-6-astra",
+  "expectedEvents": [
+    {
+      "type": "message_start",
+      "id": "chatcmpl-123",
+      "model": "gpt-6-astra"
+    },
+    {
+      "type": "text_delta",
+      "text": "Hello"
+    },
+    {
+      "type": "message_end",
+      "finishReason": "stop"
+    }
+  ],
+  "nonStreaming": null
+}

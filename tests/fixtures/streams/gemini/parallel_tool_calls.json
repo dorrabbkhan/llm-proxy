@@ -1,0 +1,70 @@
+{
+  "source": "https://github.com/google/adk-go/blob/ea1865bd/internal/llminternal/testdata/TestParallelFunctionCalls_test_parallel_function_calls_gemini-2.5-flash.httprr (recorded streamGenerateContent?alt=sse exchange 1 response, data line verbatim)",
+  "date": "2026-10-27",
+  "model": "gemini-2.5-flash",
+  "expectedEvents": [
+    {
+      "type": "message_start",
+      "id": "ZiS5ae3fFoSAkdUPnfrxqQU",
+      "model": "gemini-2.5-flash"
+    },
+    {
+      "type": "tool_call_start",
+      "index": 0,
+      "id": "call_0",
+      "name": "sum"
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 0,
+      "argumentsDelta": "{\"a\": 2,\"b\": 3}"
+    },
+    {
+      "type": "tool_call_end",
+      "index": 0
+    },
+    {
+      "type": "tool_call_start",
+      "index": 1,
+      "id": "call_1",
+      "name": "sum"
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 1,
+      "argumentsDelta": "{\"a\": 4,\"b\": 5}"
+    },
+    {
+      "type": "tool_call_end",
+      "index": 1
+    },
+    {
+      "type": "tool_call_start",
+      "index": 2,
+      "id": "call_2",
+      "name": "sum"
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 2,
+      "argumentsDelta": "{\"a\": 6,\"b\": 7}"
+    },
+    {
+      "type": "tool_call_end",
+      "index": 2
+    },
+    {
+      "type": "usage",
+      "usage": {
+        "inputTokens": 171,
+        "outputTokens": 54,
+        "totalTokens": 302
+      }
+    },
+    {
+      "type": "message_end",
+      "finishReason": "tool_call"
+    }
+  ],
+  "nonStreaming": null
+}

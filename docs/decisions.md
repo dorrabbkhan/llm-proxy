@@ -427,10 +427,13 @@ One line each; details in the task entries above. Task PRs: 1→#1, 2→#2,
     the streaming docs publish text, tool_use and error examples only.
   - `gemini`: `max_tokens`, `error` — no recorded MAX_TOKENS or in-stream
     `{"error":…}` exchange found in Google's published captures.
-  - `ollama`: `error` is recorded, but note it comes from a 404 response
-    line — Ollama answers errors as a single `{"error":"…"}` body, and the
-    documented in-stream form is the same line shape. No public way found to
-    trigger a mid-stream error line.
+  - `ollama`: `error` — per https://docs.ollama.com/api/errors a mid-stream
+    error is an NDJSON `{"error":"…"}` line after normal chunks, with the
+    HTTP status left at 200; a decoder never sees a 404. The first
+    recording was a pre-stream 404 `application/json` body — the
+    non-streaming JSON-error path (plan Review Focus #4), not decoder
+    input — so the case was removed. Needs an owner recording of a real
+    mid-stream error.
 - Edits to captured bytes, disclosed: the OpenAI `tool_call` capture drops the
   second synthetic `choices:[]` usage chunk the SDK authors added for a
   token-details accumulator test (real streams emit exactly one). The OpenAI
@@ -447,6 +450,13 @@ One line each; details in the task entries above. Task PRs: 1→#1, 2→#2,
     (Gemini; the wire `responseId` is used for `message_start.id` there).
   - Empty `content`/argument strings produce no `text_delta`/`tool_call_delta`
     event (e.g. OpenAI's opening `{"role":"assistant","content":""}` chunk).
+  - Gemini and Ollama send tool arguments as objects on the wire:
+    `argumentsDelta` is `JSON.stringify` of the wire `args`/`arguments`
+    object (key order preserved), and `stream-fixtures.test.ts` checks the
+    concatenated deltas against the wire bytes.
+  - `anthropic/error`'s event list is error-only (no `message_start`):
+    the documented example (docs.claude.com 'Error events') shows only the
+    error event itself, so decoders emit it as-is.
   - `usage` is emitted once, before `message_end`: Anthropic merges
     `message_start.usage.input_tokens` with `message_delta`'s cumulative
     `output_tokens`; Gemini takes the last chunk's cumulative `usageMetadata`;

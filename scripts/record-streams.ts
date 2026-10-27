@@ -96,12 +96,6 @@ const CASES: Record<string, Case> = {
       options: { temperature: 0, num_predict: 5 },
     },
   },
-  error: {
-    request: {
-      model: `${MODEL}-does-not-exist`,
-      messages: [{ role: "user", content: "hi" }],
-    },
-  },
 };
 
 async function main(): Promise<void> {

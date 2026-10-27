@@ -31,6 +31,47 @@ interface StreamFixture {
   nonStreaming: unknown;
 }
 
+/**
+ * Tool-call args objects from the wire bytes, in call order. Gemini and
+ * Ollama send arguments as objects, so the canonical `argumentsDelta` is
+ * their JSON.stringify (spec §3.3), not a wire substring.
+ */
+function wireToolArgs(provider: "gemini" | "ollama", text: string): unknown[] {
+  const args: unknown[] = [];
+  if (provider === "ollama") {
+    for (const line of text.split("\n")) {
+      const t = line.trim();
+      if (!t) continue;
+      const obj = JSON.parse(t) as {
+        message?: { tool_calls?: { function?: { arguments?: unknown } }[] };
+      };
+      for (const tc of obj.message?.tool_calls ?? []) {
+        args.push(tc.function?.arguments);
+      }
+    }
+    return args;
+  }
+  for (const block of text.split(/\r?\n\r?\n/)) {
+    const data = block
+      .split(/\r?\n/)
+      .filter((l) => l.startsWith("data:"))
+      .map((l) => l.slice("data:".length).trimStart())
+      .join("\n");
+    if (!data) continue;
+    const obj = JSON.parse(data) as {
+      candidates?: {
+        content?: { parts?: { functionCall?: { args?: unknown } }[] };
+      }[];
+    };
+    for (const cand of obj.candidates ?? []) {
+      for (const part of cand.content?.parts ?? []) {
+        if (part.functionCall) args.push(part.functionCall.args);
+      }
+    }
+  }
+  return args;
+}
+
 const cases: { provider: Provider; name: string }[] = [];
 for (const provider of readdirSync(STREAMS_DIR) as Provider[]) {
   const dir = join(STREAMS_DIR, provider);
@@ -63,6 +104,26 @@ describe("stream fixture corpus", () => {
         result.success,
         `expectedEvents[${i}]: ${JSON.stringify(result.success ? {} : result.error.issues)}`,
       ).toBe(true);
+    }
+
+    if (provider === "gemini" || provider === "ollama") {
+      const deltas = new Map<number, string>();
+      for (const event of fixture.expectedEvents) {
+        if (event.type === "tool_call_delta") {
+          deltas.set(
+            event.index,
+            (deltas.get(event.index) ?? "") + event.argumentsDelta,
+          );
+        }
+      }
+      const concatenated = [...deltas.entries()]
+        .sort(([a], [b]) => a - b)
+        .map(([, delta]) => delta);
+      expect(concatenated).toEqual(
+        wireToolArgs(provider, readFileSync(wireFile, "utf8")).map((args) =>
+          JSON.stringify(args),
+        ),
+      );
     }
 
     if (name === "error") {

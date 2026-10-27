@@ -39,6 +39,7 @@ describe('Anthropic Adapter', () => {
       const result = toCanonicalRequest(input);
 
       expect(result.model).toBe('claude-3-opus-20240229');
+      expect(result.stream).toBeUndefined();
       expect(result.messages).toHaveLength(1);
       expect(result.messages[0].role).toBe('user');
       expect(result.messages[0].content).toBe('Hello');
@@ -106,6 +107,17 @@ describe('Anthropic Adapter', () => {
         expect(content[1].type).toBe('image');
         expect(content[1].image?.data).toBe('abc123');
       }
+    });
+
+    it('should surface stream:true into canonical', () => {
+      const input: MessageCreateParams = {
+        model: 'claude-3-opus-20240229',
+        messages: [{ role: 'user', content: 'Hello' }],
+        max_tokens: 1024,
+        stream: true,
+      };
+
+      expect(toCanonicalRequest(input).stream).toBe(true);
     });
   });
 

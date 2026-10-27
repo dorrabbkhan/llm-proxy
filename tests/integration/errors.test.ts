@@ -10,8 +10,11 @@ import {
 } from "vitest";
 import { http, HttpResponse, delay } from "msw";
 import { setupServer } from "msw/node";
+import express from "express";
+import pino from "pino";
 import request from "supertest";
 import { app } from "../../src/app";
+import { createRequestLogger } from "../../src/middleware/request-logger";
 import { resetConfig } from "../../src/config/env-config";
 import { adapters, type Provider } from "../../src/transformers";
 import { makeCanonicalError } from "../../src/utils/canonical-error";
@@ -20,6 +23,7 @@ import type { CanonicalErrorKind } from "../../src/types/canonical.types";
 import {
   upstreamHandlers,
   capturedRequests,
+  capturedHeaders,
   resetCaptured,
   resetOverrides,
   MOCK_BASE_URLS,
@@ -539,4 +543,316 @@ describe("privacy (spec §3.3)", () => {
     expect(res.status).toBe(502);
     expect(capturedLogLines()).not.toContain("API key not valid");
   });
+});
+
+describe("client auth in native headers (spec §3.4)", () => {
+  // Distinctive value — assertions check it never reaches the upstream
+  // request or a log line.
+  const CLIENT_KEY = "client-key-9f8e7d6c";
+
+  const AUTH_STYLES: {
+    style: string;
+    apply: (r: request.Test, key: string) => request.Test;
+  }[] = [
+    {
+      style: "Authorization: Bearer",
+      apply: (r, key) => r.set("Authorization", `Bearer ${key}`),
+    },
+    { style: "x-api-key", apply: (r, key) => r.set("x-api-key", key) },
+    {
+      style: "x-goog-api-key",
+      apply: (r, key) => r.set("x-goog-api-key", key),
+    },
+    {
+      style: "?key= query parameter",
+      apply: (r, key) => r.query({ key }),
+    },
+  ];
+
+  /**
+   * app.ts reads PROXY_API_KEY when the app is built, so each test needs
+   * a fresh module graph — including the env-config from that same
+   * graph (the static imports point at the un-authed app).
+   */
+  async function authedApp(source: Provider, target: Provider) {
+    vi.stubEnv("PROXY_API_KEY", CLIENT_KEY);
+    process.env.SOURCE_API = source;
+    process.env.TARGET_API = target;
+    vi.resetModules();
+    const { app: authed } = await import("../../src/app");
+    const { resetConfig: freshReset } = await import(
+      "../../src/config/env-config"
+    );
+    freshReset();
+    return authed;
+  }
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it.each(
+    (["openai", "anthropic", "gemini"] as Provider[]).flatMap((source) =>
+      AUTH_STYLES.map((style) => ({ source, style })),
+    ),
+  )(
+    "rejects a wrong key via $style.style → 401 in $source dialect",
+    async ({ source, style }) => {
+      const authed = await authedApp(source, "ollama");
+      const call = SOURCE_CALL[source];
+
+      const res = await style.apply(
+        request(authed).post(call.path).send(call.body),
+        "wrong-key",
+      );
+
+      expect(res.status, JSON.stringify(res.body)).toBe(401);
+      expect(res.body).toEqual(
+        adapters[source].fromCanonicalError(
+          makeCanonicalError("authentication", "Invalid or missing API key"),
+        ),
+      );
+      expect(capturedRequests.ollama).toHaveLength(0);
+    },
+  );
+
+  it("client key is never forwarded upstream (gemini target)", async () => {
+    const authed = await authedApp("gemini", "gemini");
+
+    const upstreamUrls: string[] = [];
+    const onRequest = ({ request: req }: { request: Request }) => {
+      upstreamUrls.push(req.url);
+    };
+    server.events.on("request:start", onRequest);
+    try {
+      const res = await request(authed)
+        .post("/v1beta/models/gpt-4:generateContent")
+        .query({ key: CLIENT_KEY })
+        .send(geminiFixtures.requests.basic as object);
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+    } finally {
+      server.events.removeListener("request:start", onRequest);
+    }
+
+    // The upstream gets only the proxy's own key — in the header, never
+    // the client's.
+    const headers = capturedHeaders.gemini[0]!;
+    expect(headers.get("x-goog-api-key")).toBe("test-key");
+    for (const value of headers.values()) {
+      expect(value).not.toContain(CLIENT_KEY);
+    }
+
+    // And the upstream URL carries no key= parameter at all.
+    const geminiUrls = upstreamUrls.filter((u) =>
+      u.startsWith(MOCK_BASE_URLS.gemini),
+    );
+    expect(geminiUrls).toHaveLength(1);
+    for (const url of geminiUrls) {
+      expect(url).not.toContain("key=");
+      expect(url).not.toContain(CLIENT_KEY);
+    }
+  });
+
+  it("client key is never forwarded upstream (anthropic target)", async () => {
+    const authed = await authedApp("anthropic", "anthropic");
+
+    const upstreamUrls: string[] = [];
+    const onRequest = ({ request: req }: { request: Request }) => {
+      upstreamUrls.push(req.url);
+    };
+    server.events.on("request:start", onRequest);
+    try {
+      const res = await request(authed)
+        .post("/v1/messages")
+        .set("x-api-key", CLIENT_KEY)
+        .send(anthropicFixtures.requests.basic as object);
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+    } finally {
+      server.events.removeListener("request:start", onRequest);
+    }
+
+    const headers = capturedHeaders.anthropic[0]!;
+    expect(headers.get("x-api-key")).toBe("test-key");
+    expect(headers.get("authorization")).toBeNull();
+    for (const value of headers.values()) {
+      expect(value).not.toContain(CLIENT_KEY);
+    }
+
+    const anthropicUrls = upstreamUrls.filter((u) =>
+      u.startsWith(MOCK_BASE_URLS.anthropic),
+    );
+    expect(anthropicUrls).toHaveLength(1);
+    for (const url of anthropicUrls) {
+      expect(url).not.toContain("key=");
+      expect(url).not.toContain(CLIENT_KEY);
+    }
+  });
+
+  it("a request authenticated via ?key= leaves no key in the request log", async () => {
+    // Assert on the written line, not on logger call arguments:
+    // pino-http's serializers (which carry the redaction) run at write
+    // time, so the raw req/res in the call args still hold the key.
+    const lines: string[] = [];
+    const capture = pino(
+      { level: "debug" },
+      {
+        write: (chunk: string) => {
+          lines.push(chunk);
+        },
+      },
+    );
+    const mini = express();
+    mini.use(createRequestLogger(capture));
+    mini.post("/v1/chat/completions", (_req, res) => res.json({ ok: true }));
+
+    const res = await request(mini)
+      .post("/v1/chat/completions")
+      .query({ key: CLIENT_KEY, other: "1" })
+      .set("Authorization", `Bearer ${CLIENT_KEY}`)
+      .set("x-api-key", CLIENT_KEY)
+      .set("x-goog-api-key", CLIENT_KEY)
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.join("")).not.toContain(CLIENT_KEY);
+  });
+});
+
+describe("streaming refusal and unsupported gemini methods (spec §3.2)", () => {
+  const STREAMING_MESSAGE =
+    'Streaming is not supported yet (planned for v1.1). Send "stream": false.';
+
+  // Gemini selects streaming by endpoint, not a body field — the other
+  // three sources carry stream in the request body.
+  const STREAM_BODY_SOURCES: Provider[] = ["openai", "anthropic", "ollama"];
+
+  it.each(
+    STREAM_BODY_SOURCES.flatMap((source) =>
+      providers.map((target) => ({ source, target })),
+    ),
+  )(
+    "$source stream:true → 501 in source dialect, no upstream call ($target)",
+    async ({ source, target }) => {
+      setPair(source, target);
+
+      const call = SOURCE_CALL[source];
+      const res = await request(app)
+        .post(call.path)
+        .send({ ...(call.body as Record<string, unknown>), stream: true });
+
+      expect(res.status, JSON.stringify(res.body)).toBe(501);
+      expect(res.body).toEqual(
+        adapters[source].fromCanonicalError(
+          makeCanonicalError("unsupported", STREAMING_MESSAGE),
+        ),
+      );
+      expect(capturedRequests[target]).toHaveLength(0);
+    },
+  );
+
+  it.each(providers)(
+    "gemini :streamGenerateContent → 501, no upstream call ($target)",
+    async (target) => {
+      setPair("gemini", target);
+
+      const res = await request(app)
+        .post("/v1beta/models/gemini-2.0-flash:streamGenerateContent")
+        .send(geminiFixtures.requests.basic as object);
+
+      expect(res.status, JSON.stringify(res.body)).toBe(501);
+      expect(res.body).toEqual(
+        adapters.gemini.fromCanonicalError(
+          makeCanonicalError("unsupported", STREAMING_MESSAGE),
+        ),
+      );
+      expect(capturedRequests[target]).toHaveLength(0);
+    },
+  );
+
+  it("gemini :streamGenerateContent with ?alt=sse → 501, no upstream call", async () => {
+    setPair("gemini", "ollama");
+
+    const res = await request(app)
+      .post("/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse")
+      .send(geminiFixtures.requests.basic as object);
+
+    expect(res.status, JSON.stringify(res.body)).toBe(501);
+    expect(res.body).toEqual(
+      adapters.gemini.fromCanonicalError(
+        makeCanonicalError("unsupported", STREAMING_MESSAGE),
+      ),
+    );
+    expect(capturedRequests.ollama).toHaveLength(0);
+  });
+
+  it("gemini percent-encoded %3AstreamGenerateContent → 501, no upstream call", async () => {
+    setPair("gemini", "ollama");
+
+    const res = await request(app)
+      .post("/v1beta/models/gemini-2.0-flash%3AstreamGenerateContent")
+      .send(geminiFixtures.requests.basic as object);
+
+    expect(res.status, JSON.stringify(res.body)).toBe(501);
+    expect(res.body).toEqual(
+      adapters.gemini.fromCanonicalError(
+        makeCanonicalError("unsupported", STREAMING_MESSAGE),
+      ),
+    );
+    expect(capturedRequests.ollama).toHaveLength(0);
+  });
+
+  it.each(
+    providers.flatMap((target) =>
+      ["countTokens", "embedContent"].map((method) => ({ target, method })),
+    ),
+  )(
+    "gemini non-chat method :$method → 501 in gemini dialect ($target)",
+    async ({ target, method }) => {
+      setPair("gemini", target);
+
+      const res = await request(app)
+        .post(`/v1beta/models/gemini-2.0-flash:${method}`)
+        .send(geminiFixtures.requests.basic as object);
+
+      expect(res.status, JSON.stringify(res.body)).toBe(501);
+      expect(res.body).toEqual(
+        adapters.gemini.fromCanonicalError(
+          makeCanonicalError("unsupported", `${method} is not supported`),
+        ),
+      );
+      expect(capturedRequests[target]).toHaveLength(0);
+    },
+  );
+
+  it("gemini non-chat method on a tunedModels path → 501", async () => {
+    setPair("gemini", "ollama");
+
+    const res = await request(app)
+      .post("/v1beta/models/tunedModels/my-model:countTokens")
+      .send(geminiFixtures.requests.basic as object);
+
+    expect(res.status, JSON.stringify(res.body)).toBe(501);
+    expect(res.body).toEqual(
+      adapters.gemini.fromCanonicalError(
+        makeCanonicalError("unsupported", "countTokens is not supported"),
+      ),
+    );
+    expect(capturedRequests.ollama).toHaveLength(0);
+  });
+
+  it.each(providers)(
+    "stream:false is accepted ($source → ollama)",
+    async (source) => {
+      setPair(source, "ollama");
+
+      const call = SOURCE_CALL[source];
+      const res = await request(app)
+        .post(call.path)
+        .send({ ...(call.body as Record<string, unknown>), stream: false });
+
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(capturedRequests.ollama).toHaveLength(1);
+    },
+  );
 });

@@ -66,6 +66,9 @@ export function toCanonicalRequest(
   const result: CanonicalRequest = {
     model: request.model,
     messages,
+    // Canonical treats absent and stream:false identically — only an
+    // explicit true turns streaming on.
+    ...(request.stream === true && { stream: true }),
     ...(request.system && {
       systemPrompt:
         typeof request.system === "string"

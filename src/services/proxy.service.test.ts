@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { proxyRequest } from "./proxy.service";
 import { resetConfig } from "../config/env-config";
-import { UpstreamError, ValidationError } from "../utils/errors";
+import {
+  NotSupportedError,
+  UpstreamError,
+  ValidationError,
+} from "../utils/errors";
 import { logger } from "../utils/logger";
 
 vi.mock("./http-client", () => ({
@@ -154,6 +158,58 @@ describe("proxyRequest", () => {
         url: "http://gemini.test/v1beta/models/gpt-4:generateContent",
       }),
     );
+  });
+
+  it("stream:true → NotSupportedError 501, no upstream call", async () => {
+    const err = await proxyRequest(
+      "/v1/chat/completions",
+      "POST",
+      { ...VALID_OPENAI_REQUEST, stream: true },
+      "r1",
+    ).catch((e) => e);
+
+    expect(err).toBeInstanceOf(NotSupportedError);
+    expect(err.statusCode).toBe(501);
+    expect(err.message).toBe(
+      'Streaming is not supported yet (planned for v1.1). Send "stream": false.',
+    );
+    expect(mockPostJson).not.toHaveBeenCalled();
+  });
+
+  it("gemini :streamGenerateContent → NotSupportedError streaming message", async () => {
+    process.env.SOURCE_API = "gemini";
+    resetConfig();
+
+    const err = await proxyRequest(
+      "/v1beta/models/llama3:streamGenerateContent",
+      "POST",
+      { contents: [{ role: "user", parts: [{ text: "Hello" }] }] },
+      "r1",
+    ).catch((e) => e);
+
+    expect(err).toBeInstanceOf(NotSupportedError);
+    expect(err.statusCode).toBe(501);
+    expect(err.message).toBe(
+      'Streaming is not supported yet (planned for v1.1). Send "stream": false.',
+    );
+    expect(mockPostJson).not.toHaveBeenCalled();
+  });
+
+  it("gemini :countTokens → NotSupportedError 'countTokens is not supported'", async () => {
+    process.env.SOURCE_API = "gemini";
+    resetConfig();
+
+    const err = await proxyRequest(
+      "/v1beta/models/llama3:countTokens",
+      "POST",
+      { contents: [{ role: "user", parts: [{ text: "Hello" }] }] },
+      "r1",
+    ).catch((e) => e);
+
+    expect(err).toBeInstanceOf(NotSupportedError);
+    expect(err.statusCode).toBe(501);
+    expect(err.message).toBe("countTokens is not supported");
+    expect(mockPostJson).not.toHaveBeenCalled();
   });
 
   it("gemini source takes the model from the request path", async () => {

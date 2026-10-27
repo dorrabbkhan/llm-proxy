@@ -14,6 +14,7 @@ import {
   canonicalResponseSchema,
 } from "../types/canonical.schema";
 import {
+  NotSupportedError,
   TransformError,
   UpstreamError,
   ValidationError,
@@ -40,6 +41,22 @@ function toClientFacing(err: UpstreamError, target: Provider): UpstreamError {
     );
   }
   return err;
+}
+
+/**
+ * The "<method>" in a "/v1beta/models/<m>:<method>" path — the text
+ * after the last ":" of the percent-decoded path, the same parsing the
+ * route's isSupportedPath uses.
+ */
+function methodFromPath(path: string): string {
+  let decoded = path;
+  try {
+    decoded = decodeURIComponent(path);
+  } catch {
+    // malformed escapes — fall back to the raw path
+  }
+  const colon = decoded.lastIndexOf(":");
+  return colon === -1 ? decoded : decoded.slice(colon + 1);
 }
 
 /**
@@ -99,6 +116,13 @@ export async function proxyRequest(
     return proxyModelList(route, config, sourceApi, targetApi, requestId);
   }
 
+  // Gemini paths carry a ":<method>" suffix — anything that isn't a
+  // method this route serves is refused before conversion, before any
+  // upstream call (spec §3.2, E11).
+  if (route.isSupportedPath?.(path) === false) {
+    throw new NotSupportedError(`${methodFromPath(path)} is not supported`);
+  }
+
   // Source → Canonical. The adapter may throw on malformed input —
   // that's a client error (400), not a server error (500).
   let canonical: ReturnType<(typeof adapters)[Provider]["toCanonicalRequest"]>;
@@ -121,6 +145,15 @@ export async function proxyRequest(
         message: i.message,
       })),
     });
+  }
+
+  // Honest streaming refusal (spec §3.2, E3): a `stream` body flag on
+  // the other sources, the dedicated streaming endpoint on Gemini.
+  // Refused after validation, before any upstream call.
+  if (parsed.data.stream === true || route.isStreamPath?.(path) === true) {
+    throw new NotSupportedError(
+      'Streaming is not supported yet (planned for v1.1). Send "stream": false.',
+    );
   }
 
   // The model comes from the source path when the provider puts it there

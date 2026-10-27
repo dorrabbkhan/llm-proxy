@@ -37,6 +37,59 @@ describe("PROVIDER_ROUTES", () => {
       geminiChatRoute.modelFromPath?.("/v1beta/models"),
     ).toBeUndefined();
   });
+
+  it("isStreamPath only matches :streamGenerateContent", () => {
+    expect(
+      geminiChatRoute.isStreamPath?.(
+        "/v1beta/models/gemini-2.0-flash:streamGenerateContent",
+      ),
+    ).toBe(true);
+    expect(
+      geminiChatRoute.isStreamPath?.(
+        "/v1beta/models/gemini-2.0-flash%3AstreamGenerateContent",
+      ),
+    ).toBe(true);
+    expect(
+      geminiChatRoute.isStreamPath?.(
+        "/v1beta/models/gemini-2.0-flash:generateContent",
+      ),
+    ).toBe(false);
+    expect(
+      geminiChatRoute.isStreamPath?.("/v1beta/models"),
+    ).toBe(false);
+  });
+
+  it("isSupportedPath refuses non-chat methods", () => {
+    expect(
+      geminiChatRoute.isSupportedPath?.(
+        "/v1beta/models/gemini-2.0-flash:generateContent",
+      ),
+    ).toBe(true);
+    expect(
+      geminiChatRoute.isSupportedPath?.(
+        "/v1beta/models/gemini-2.0-flash:streamGenerateContent",
+      ),
+    ).toBe(true);
+    expect(
+      geminiChatRoute.isSupportedPath?.(
+        "/v1beta/models/tunedModels/my-model:generateContent",
+      ),
+    ).toBe(true);
+    expect(
+      geminiChatRoute.isSupportedPath?.(
+        "/v1beta/models/gemini-2.0-flash:countTokens",
+      ),
+    ).toBe(false);
+    expect(
+      geminiChatRoute.isSupportedPath?.(
+        "/v1beta/models/gemini-2.0-flash%3AcountTokens",
+      ),
+    ).toBe(false);
+    // no "<m>:<method>" pair → not claimed, falls through as before
+    expect(
+      geminiChatRoute.isSupportedPath?.("/v1beta/models"),
+    ).toBe(true);
+  });
 });
 
 describe("adapters: request without stream", () => {

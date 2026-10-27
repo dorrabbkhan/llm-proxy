@@ -5,6 +5,7 @@ import {
   TransformError,
   UpstreamError,
   ConfigurationError,
+  NotSupportedError,
 } from './errors';
 
 describe('errors', () => {
@@ -67,6 +68,19 @@ describe('errors', () => {
       expect(error.code).toBe('UPSTREAM_ERROR');
       expect(error.upstreamStatus).toBe(429);
       expect(error.upstreamBody).toEqual({ error: 'rate limited' });
+    });
+  });
+
+  describe('NotSupportedError', () => {
+    it('should have 501 status and map to unsupported kind', () => {
+      const error = new NotSupportedError('nope');
+      expect(error.statusCode).toBe(501);
+      expect(error.code).toBe('NOT_SUPPORTED');
+      expect(error.toCanonical()).toEqual({
+        kind: 'unsupported',
+        status: 501,
+        message: 'nope',
+      });
     });
   });
 

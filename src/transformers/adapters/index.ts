@@ -26,6 +26,33 @@ export interface ProviderRoute {
   requestPath: (model?: string) => string;
   /** Model id carried in the incoming path (gemini chat only) */
   modelFromPath?: (path: string) => string | undefined;
+  /** Path names the provider's streaming endpoint (gemini chat only) */
+  isStreamPath?: (path: string) => boolean;
+  /** Path names a method this route serves (gemini chat only) */
+  isSupportedPath?: (path: string) => boolean;
+}
+
+/**
+ * The "<model>:<method>" pair carried in a gemini chat path
+ * (/v1beta/models/<model>:<method>). The method suffix is
+ * ":"-separated; the model id may be percent-encoded and may contain
+ * "/" (e.g. tunedModels/x). Undefined when the path has no such pair.
+ */
+function geminiPathParts(
+  path: string,
+): { model: string; method: string } | undefined {
+  let decoded = path;
+  try {
+    decoded = decodeURIComponent(path);
+  } catch {
+    // malformed escapes — fall back to the raw path
+  }
+  const prefix = "/v1beta/models/";
+  if (!decoded.startsWith(prefix)) return undefined;
+  const rest = decoded.slice(prefix.length);
+  const colon = rest.lastIndexOf(":");
+  if (colon === -1) return undefined;
+  return { model: rest.slice(0, colon), method: rest.slice(colon + 1) };
 }
 
 /**
@@ -53,20 +80,18 @@ export const PROVIDER_ROUTES: Record<Provider, ProviderRoute[]> = {
       method: "POST",
       pathPrefix: "/v1beta/models",
       requestPath: (model) => `/v1beta/models/${model}:generateContent`,
-      modelFromPath: (path) => {
-        // The method suffix is ":"-separated; the model id itself may be
-        // percent-encoded and may contain "/" (e.g. tunedModels/x).
-        let decoded = path;
-        try {
-          decoded = decodeURIComponent(path);
-        } catch {
-          // malformed escapes — fall back to the raw path
-        }
-        const prefix = "/v1beta/models/";
-        if (!decoded.startsWith(prefix)) return undefined;
-        const rest = decoded.slice(prefix.length);
-        const colon = rest.lastIndexOf(":");
-        return colon === -1 ? undefined : rest.slice(0, colon);
+      modelFromPath: (path) => geminiPathParts(path)?.model,
+      isStreamPath: (path) =>
+        geminiPathParts(path)?.method === "streamGenerateContent",
+      // A path without a "<m>:<method>" pair isn't claimed here — it
+      // falls through to the model-from-body flow as before.
+      isSupportedPath: (path) => {
+        const method = geminiPathParts(path)?.method;
+        return (
+          method === undefined ||
+          method === "generateContent" ||
+          method === "streamGenerateContent"
+        );
       },
     },
     {

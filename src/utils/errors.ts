@@ -74,6 +74,17 @@ export class UpstreamError extends ProxyError {
   }
 }
 
+/**
+ * 501 — the client asked for something the proxy refuses by design
+ * (streaming, unsupported provider methods). Canonical kind
+ * `unsupported` via the default toCanonical().
+ */
+export class NotSupportedError extends ProxyError {
+  constructor(message: string, context?: Record<string, unknown>) {
+    super(message, 501, "NOT_SUPPORTED", context);
+  }
+}
+
 export class AuthError extends ProxyError {
   constructor(message: string, context?: Record<string, unknown>) {
     super(message, 401, "UNAUTHORIZED", context);

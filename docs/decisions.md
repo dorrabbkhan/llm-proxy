@@ -276,7 +276,7 @@ One entry per decision or per task that deviated from the plan or spec. Newest a
   against `package.json` (root still `ISC`, provider SDKs under
   `dependencies`, lingering `@types/uuid`/`yaml` entries, no `engines`).
   The regeneration only moved `dev` flags, removed those stale entries
-  and synced root license/author/engines/version — **no resolved version
+  and synced root license/engines/version — **no resolved version
   of any package changed** (verified in the diff). `npm ci` afterwards
   installs cleanly (295 packages).
 - README quick-start verified verbatim 2026-10-27 against a real Ollama
@@ -299,6 +299,9 @@ One entry per decision or per task that deviated from the plan or spec. Newest a
   request that omits `stream` is answered non-streaming — stated in
   README's Known limitations and CHANGELOG's Changed, with "send
   `"stream": false` explicitly" and the 501-until-v1.1 note.
+- Fix round 1 (PR #10 review): `CONTRIBUTING.md` edited to remove the
+  stale "still in owner review" CLA wording — outside this task's Files
+  block, recorded here.
 
 ## v1.0.1 summary — deviations recorded across the version
 
@@ -318,14 +321,18 @@ One line each; details in the task entries above. Task PRs: 1→#1, 2→#2,
   Gemini `INTERNAL`); owner-approved changes: Anthropic `timeout_error`,
   Gemini `API_KEY_INVALID` → `authentication`, spec §3.3 table edited in
   the same commit; `openai.adapter.ts` already over ~400 lines.
-- Task 4 (PR #4): `bodyPreview`/`upstreamBody` kept out of `err.context`
-  and logs; `toClientError` keys on the parsed kind, not raw status; all
+- Task 4 (PR #4): `upstreamBody` removed from `err.context`;
+  `bodyPreview` deliberately stays in `err.context` outside production
+  and is surfaced in non-production `details`, but is never logged
+  (owner decision, PR #2); `toClientError` keys on the parsed kind, not raw status; all
   upstream 5xx except 503/529 → 502; `Retry-After` passes through on any
   status; `resolveSource` never throws; unhandled-error log whitelists
   fields; `request-logger` credential redaction (outside the Files block).
 - Task 5 (PR #5): `isSupportedPath` returns true for unparseable paths;
-  Anthropic adapter gained `stream === true` passthrough and two new test
-  files were created — all outside the Files block.
+  Anthropic adapter gained `stream === true` passthrough. Files outside
+  the Files block: `src/transformers/adapters/anthropic.adapter.ts` plus
+  three modified test files (`anthropic.adapter.test.ts`,
+  `src/utils/errors.test.ts`, `src/transformers/adapters/index.test.ts`).
 - Task 6 (PR #6): no deviations recorded.
 - Follow-up (PR #7): live default Ollama model `qwen3:0.6b` →
   `qwen2.5:0.5b` per owner decision (thinking flake); spec and plan

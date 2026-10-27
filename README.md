@@ -49,8 +49,10 @@ Two endpoint kinds are supported:
   `/api/tags`) transform the upstream catalog into the source format,
   so client SDKs and dropdowns work unchanged.
 
-Every completed request logs token usage (`inputTokens`, `outputTokens`,
-`finishReason`, upstream latency) via pino — grep for `"Request completed"`.
+Every completed chat request logs token usage (`inputTokens`,
+`outputTokens`, `finishReason`, upstream latency) via pino — grep for
+`"Request completed"`. Model-list requests log `modelCount` instead
+(`"Models list completed"`).
 
 ## Quick start
 
@@ -153,9 +155,14 @@ When the upstream provider itself fails, the status the client sees is:
 | Transport failure | 502 | Upstream unreachable |
 | Non-JSON 2xx body | 502 | `Upstream returned a non-JSON response (content-type: <type>)` |
 
-Request logs redact credentials, and error messages never echo prompt
-bodies or API keys. Unknown paths and `/health` keep a small generic
-error shape rather than any provider's.
+Error privacy in detail: proxy-generated messages contain no prompt text
+or API keys, and client credentials are redacted from request logs. An
+upstream 401/403 — including Gemini's `400 API_KEY_INVALID` — reaches
+neither the client nor the logs; every other upstream error message is
+passed through to the client and logged truncated to 200 characters.
+Outside production, an error's `details` may include the first 200
+characters of a non-JSON upstream body. Unknown paths and `/health` keep
+a small generic error shape rather than any provider's.
 
 ## Project structure
 
@@ -219,8 +226,9 @@ npm run test:live
   `qwen2.5:0.5b`).
 - **Paid providers are opt-in**: OpenAI, Anthropic and Gemini cases run
   only when `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` are
-  set, with a cheap model from `LIVE_<PROVIDER>_MODEL`. Skipped targets
-  are listed in the output.
+  set, with cheap defaults `gpt-4o-mini`, `claude-3-5-haiku-latest` and
+  `gemini-2.0-flash` respectively — `LIVE_<PROVIDER>_MODEL` overrides.
+  Skipped targets are listed in the output.
 - Cases per available target, driven through every source format: a chat
   round trip, the model list, an unknown model → 404, and `stream: true`
   → 501 — all asserted on response *shape*, never on generated text.
@@ -231,7 +239,8 @@ owner adds them.
 
 ## Adding a provider
 
-Adding a provider costs one adapter file — see
+Adding a provider means one adapter plus registration, env typing and
+fixtures/tests — see
 [CONTRIBUTING.md](CONTRIBUTING.md#adding-a-provider).
 
 ## Known limitations
@@ -269,7 +278,9 @@ docker run -p 3000:3000 --env-file .env llm-proxy
 ```
 
 Multi-stage build: provider SDKs are `devDependencies` (type-only imports),
-so the runtime image only ships express/pino/zod/dotenv plus `dist/`.
+so the runtime image ships `dist/` plus the top-level runtime
+dependencies from `package.json` — `dotenv`, `express`, `pino`,
+`pino-http` and `zod`.
 
 ## Stack
 

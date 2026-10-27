@@ -15,10 +15,12 @@ gets the repository ready for outside contributors.
 
 ### Fixed
 
-- **Ollama clients got NDJSON instead of a reply (E1).** The Ollama adapter
-  now sends `stream: false` upstream when the client omitted `stream` —
-  Ollama's own API streams by default, and the streamed reply crashed the
-  proxy's JSON response path.
+- **Ollama chat requests failed with a 500 (E1).** Ollama's own API
+  streams NDJSON by default; when the client omitted `stream`, the
+  streamed upstream reply crashed the proxy's JSON response path and the
+  client got a 500 `TRANSFORM_ERROR` instead of a reply. The Ollama
+  adapter now sends `stream: false` upstream when the client omitted
+  `stream`.
 - **Non-JSON upstream bodies failed confusingly (E2).** A 2xx upstream
   reply that isn't JSON now returns 502
   `Upstream returned a non-JSON response (content-type: <type>)` instead of
@@ -32,12 +34,15 @@ gets the repository ready for outside contributors.
 
 ### Changed
 
-- **Every error is rendered in the client's provider format** — OpenAI,
-  Anthropic, Gemini and Ollama error bodies — so client SDKs raise their
-  native exceptions. This covers upstream failures, auth rejections,
-  malformed JSON and oversized bodies on provider routes.
+- **Errors on configured provider routes are rendered in the client's
+  provider format** — OpenAI, Anthropic, Gemini and Ollama error bodies —
+  so client SDKs raise their native exceptions. This covers upstream
+  failures, auth rejections, malformed JSON and oversized bodies on those
+  routes; non-provider paths (unknown routes, `/health`) keep the generic
+  `{error:{message,code,status}}` shape.
   **Compatibility note:** the old `{error:{message,code,status}}` shape is
-  gone; clients that parsed it must switch to their SDK's error types.
+  gone on provider routes; clients that parsed it must switch to their
+  SDK's error types.
 - **Upstream status mapping is honest about who failed:** 400/422 → 400,
   404 → 404, 413 → 413, 429 → 429 with `Retry-After` passed through,
   503/529 → 503, other 5xx → 502. Upstream 401/403 — including Gemini's

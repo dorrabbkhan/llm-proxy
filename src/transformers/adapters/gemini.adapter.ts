@@ -9,11 +9,16 @@ import type {
   CanonicalFinishReason,
   ProviderAdapter,
   CanonicalModelList,
+  StreamDecoder,
+  StreamEncoder,
+  StreamEncoderContext,
+  IdGenerator,
 } from "../../types/canonical.types";
 import {
   kindFromStatus,
   makeCanonicalError,
 } from "../../utils/canonical-error";
+import { NotSupportedError } from "../../utils/errors";
 import type {
   Content,
   GenerateContentRequest,
@@ -52,6 +57,8 @@ export const geminiAdapter: ProviderAdapter<
   fromCanonicalModelList,
   toCanonicalError,
   fromCanonicalError,
+  createStreamDecoder,
+  createStreamEncoder,
 };
 
 // ============ REQUEST: Gemini → Canonical ============
@@ -408,4 +415,23 @@ export function fromCanonicalError(err: CanonicalError): unknown {
       status: GEMINI_ERROR_STATUS[err.kind],
     },
   };
+}
+
+// ============ STREAMING (stub — Task 7) ============
+
+export function createStreamDecoder(
+  _model: string,
+  _ids?: IdGenerator,
+): StreamDecoder {
+  throw new NotSupportedError(
+    'Streaming is not supported yet (planned for v1.1). Send "stream": false.',
+  );
+}
+
+export function createStreamEncoder(
+  _ctx: StreamEncoderContext<GenerateContentRequest>,
+): StreamEncoder {
+  throw new NotSupportedError(
+    'Streaming is not supported yet (planned for v1.1). Send "stream": false.',
+  );
 }

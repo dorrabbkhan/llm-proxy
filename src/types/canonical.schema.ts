@@ -43,6 +43,7 @@ export const canonicalMessageSchema = z.object({
   content: z.union([z.string(), z.array(contentPartSchema)]),
   toolCalls: z.array(toolCallSchema).optional(),
   toolCallId: z.string().optional(),
+  isError: z.boolean().optional(),
   name: z.string().optional(),
 });
 
@@ -56,6 +57,7 @@ export const canonicalConfigSchema = z.object({
   seed: z.number().optional(),
   frequencyPenalty: z.number().optional(),
   presencePenalty: z.number().optional(),
+  contextWindow: z.number().int().positive().optional(),
 });
 
 const functionSchema = z.object({
@@ -69,12 +71,21 @@ export const canonicalToolSchema = z.object({
   function: functionSchema,
 });
 
+export const canonicalToolChoiceSchema = z.union([
+  z.enum(["auto", "none", "required"]),
+  z.object({
+    type: z.literal("function"),
+    function: z.object({ name: z.string() }),
+  }),
+]);
+
 export const canonicalRequestSchema = z.object({
   model: z.string().min(1),
   messages: z.array(canonicalMessageSchema).min(1),
   systemPrompt: z.string().optional(),
   config: canonicalConfigSchema.optional(),
   tools: z.array(canonicalToolSchema).optional(),
+  toolChoice: canonicalToolChoiceSchema.optional(),
   stream: z.boolean().optional(),
 });
 
@@ -100,18 +111,6 @@ export const canonicalResponseSchema = z.object({
   finishReason: finishReasonSchema,
   usage: canonicalUsageSchema.optional(),
   created: z.number().optional(),
-});
-
-export const canonicalStreamChunkSchema = z.object({
-  id: z.string(),
-  model: z.string(),
-  delta: z.object({
-    role: z.literal("assistant").optional(),
-    content: z.string().optional(),
-    toolCalls: z.array(toolCallSchema.partial()).optional(),
-  }),
-  finishReason: finishReasonSchema.optional(),
-  usage: canonicalUsageSchema.optional(),
 });
 
 // ============ ERRORS ============
@@ -149,3 +148,34 @@ export const canonicalModelSchema = z.object({
 export const canonicalModelListSchema = z.object({
   models: z.array(canonicalModelSchema),
 });
+
+// ============ STREAMING ============
+
+const streamIndexSchema = z.number().int().nonnegative();
+
+export const canonicalStreamEventSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("message_start"),
+    id: z.string(),
+    model: z.string(),
+  }),
+  z.object({ type: z.literal("text_delta"), text: z.string() }),
+  z.object({
+    type: z.literal("tool_call_start"),
+    index: streamIndexSchema,
+    id: z.string(),
+    name: z.string(),
+  }),
+  z.object({
+    type: z.literal("tool_call_delta"),
+    index: streamIndexSchema,
+    argumentsDelta: z.string(),
+  }),
+  z.object({ type: z.literal("tool_call_end"), index: streamIndexSchema }),
+  z.object({ type: z.literal("usage"), usage: canonicalUsageSchema }),
+  z.object({
+    type: z.literal("message_end"),
+    finishReason: finishReasonSchema,
+  }),
+  z.object({ type: z.literal("error"), error: canonicalErrorSchema }),
+]);

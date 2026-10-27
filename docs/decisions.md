@@ -369,3 +369,36 @@ One line each; details in the task entries above. Task PRs: 1→#1, 2→#2,
   date-based pointer: the spec file keeps its `llm-proxy` name (past spec files
   are excluded from the rename), so the literal filename could not stay without
   failing the task's grep check.
+
+## v1.1 Task 2: canonical stream events and stream utilities
+
+- Canonical changes (spec §3.1), all mirrored in `canonical.schema.ts`:
+  `CanonicalStreamEvent` replaces `CanonicalStreamChunk`/`CanonicalDelta`
+  (both had no users; `canonicalStreamChunkSchema` removed with them);
+  `CanonicalRequest.toolChoice`, `CanonicalConfig.contextWindow`,
+  `CanonicalMessage.isError`; `StreamDecoder`, `StreamEncoder`,
+  `StreamEncoderContext`, `IdGenerator`; `ProviderAdapter` gains
+  `createStreamDecoder`/`createStreamEncoder` and `toCanonicalResponse`
+  gains an optional `ids?: IdGenerator` (existing two-arg implementations
+  still satisfy the interface).
+- `createStreamDecoder` takes `ids?: IdGenerator` per the plan's Interfaces
+  block; spec §3.1's sketch omits it — the plan is authoritative.
+- All four adapters stub `createStreamDecoder`/`createStreamEncoder` with
+  `NotSupportedError` and the existing 501 message, so `proxy.service`'s
+  stream branch (Task 4) keeps returning 501 until Tasks 4–7 land.
+- `createSseParser` drops an event with no `data:` field (bare `event:` /
+  comment-only blocks) and dispatches a still-buffered event at `end()`;
+  `createLineSplitter`/`takeLines` key on "\n" and strip a trailing "\r",
+  which also covers `\r\n` split across chunks.
+- `parseToolArguments` treats a whitespace-only string like `""` (→ `{}`,
+  valid); valid JSON that isn't an object (arrays, scalars) gets the
+  `_invalid_arguments` wrapper.
+- `reassembleStream` enforces the spec §3.1 rules strictly (sequential
+  `tool_call_start` indexes from 0, deltas/ends only on open calls, usage at
+  most once, nothing after `message_end`/`error`); violations raise
+  `TransformError`, an `error` event raises a `ProxyError` carrying the
+  event's status and kind as its code.
+- `createIdGenerator` uses a random base64url suffix (`call_<12 chars>`);
+  `sequentialIds` stays `call_0`, `call_1`, … for deterministic tests.
+- `createUtf8Decoder` flushes on an empty `Uint8Array` (a truncated trailing
+  character becomes U+FFFD); decoders call it from `end()`.

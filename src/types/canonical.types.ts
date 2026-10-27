@@ -18,6 +18,8 @@ export interface CanonicalRequest {
   config?: CanonicalConfig;
   /** Tool/function definitions */
   tools?: CanonicalTool[];
+  /** How the model may use the offered tools */
+  toolChoice?: CanonicalToolChoice;
   /** Enable streaming response */
   stream?: boolean;
 }
@@ -31,6 +33,8 @@ export interface CanonicalMessage {
   toolCalls?: CanonicalToolCall[];
   /** ID of tool call this message is responding to */
   toolCallId?: string;
+  /** Marks a failed tool result (Anthropic is_error); role "tool" only */
+  isError?: boolean;
   /** Optional name for the message author */
   name?: string;
 }
@@ -70,6 +74,8 @@ export interface CanonicalConfig {
   frequencyPenalty?: number;
   /** Presence penalty (-2 to 2) */
   presencePenalty?: number;
+  /** Minimum context window the target should allocate (Ollama num_ctx) */
+  contextWindow?: number;
 }
 
 // ============ TOOLS ============
@@ -146,27 +152,61 @@ export interface CanonicalUsage {
 
 // ============ STREAMING ============
 
-export interface CanonicalStreamChunk {
-  /** Chunk ID */
-  id: string;
-  /** Model identifier */
-  model: string;
-  /** Incremental content delta */
-  delta: CanonicalDelta;
-  /** Finish reason (only on final chunk) */
-  finishReason?: CanonicalFinishReason;
-  /** Usage (only on final chunk, if available) */
-  usage?: CanonicalUsage;
+/**
+ * One typed event in a canonical stream (spec §3.1).
+ * Rules every decoder guarantees and every encoder may rely on:
+ * 1. Exactly one message_start first; message_end or error last, nothing after.
+ * 2. tool_call_start(i) before any tool_call_delta(i) / tool_call_end(i);
+ *    index starts at 0 and increases by one per call.
+ * 3. Concatenated argumentsDelta of call i is that call's arguments as a
+ *    JSON string, exactly as the provider sent them.
+ * 4. usage appears at most once, before message_end.
+ * 5. Events of different blocks may interleave; encoders key tool state by
+ *    index and never assume a call's events are contiguous.
+ */
+export type CanonicalStreamEvent =
+  | { type: "message_start"; id: string; model: string }
+  | { type: "text_delta"; text: string }
+  | { type: "tool_call_start"; index: number; id: string; name: string }
+  | { type: "tool_call_delta"; index: number; argumentsDelta: string }
+  | { type: "tool_call_end"; index: number }
+  | { type: "usage"; usage: CanonicalUsage }
+  | { type: "message_end"; finishReason: CanonicalFinishReason }
+  | { type: "error"; error: CanonicalError };
+
+/**
+ * Stateful provider-bytes → canonical-events converter; one per request.
+ * Pure: no I/O, no clock, no randomness (IDs come from an injected
+ * IdGenerator) so tests are deterministic.
+ */
+export interface StreamDecoder {
+  /** Feed one network chunk; returns the events it completed. */
+  feed(chunk: Uint8Array | string): CanonicalStreamEvent[];
+  /** Flush at EOF; emits `error` if the stream ended early. */
+  end(): CanonicalStreamEvent[];
 }
 
-export interface CanonicalDelta {
-  /** Role (only on first chunk) */
-  role?: "assistant";
-  /** Incremental text content */
-  content?: string;
-  /** Incremental tool calls */
-  toolCalls?: Partial<CanonicalToolCall>[];
+/** Stateful canonical-events → provider-bytes converter; one per request. */
+export interface StreamEncoder {
+  /** Wire content type the route should send (e.g. text/event-stream). */
+  readonly contentType: string;
+  /** Encode one event to wire bytes ("" when the event produces none). */
+  encode(event: CanonicalStreamEvent): string;
+  /** Terminal bytes after the last event (e.g. `data: [DONE]`). */
+  end(): string;
 }
+
+export interface StreamEncoderContext<TRequest> {
+  /** The client's own request, in this adapter's own type */
+  sourceRequest: TRequest;
+  /** Incoming query parameters (e.g. Gemini alt=sse) */
+  query: Record<string, string>;
+  /** The model name the client asked for (§3.5) */
+  requestedModel: string;
+}
+
+/** Generates tool-call IDs; injected so tests can use sequentialIds(). */
+export type IdGenerator = () => string;
 
 // ============ ERRORS ============
 
@@ -219,9 +259,17 @@ export interface ProviderAdapter<TRequest, TResponse> {
   /** Convert canonical request to provider format */
   fromCanonicalRequest(request: CanonicalRequest): TRequest;
   /** Convert provider response to canonical format */
-  toCanonicalResponse(response: TResponse, model: string): CanonicalResponse;
+  toCanonicalResponse(
+    response: TResponse,
+    model: string,
+    ids?: IdGenerator,
+  ): CanonicalResponse;
   /** Convert canonical response to provider format */
   fromCanonicalResponse(response: CanonicalResponse): TResponse;
+  /** New decoder for one upstream stream of this provider's bytes */
+  createStreamDecoder(model: string, ids?: IdGenerator): StreamDecoder;
+  /** New encoder rendering canonical events in this provider's dialect */
+  createStreamEncoder(ctx: StreamEncoderContext<TRequest>): StreamEncoder;
   /** Convert provider model-list response to canonical format */
   toCanonicalModelList(response: unknown): CanonicalModelList;
   /** Convert canonical model list to provider format */

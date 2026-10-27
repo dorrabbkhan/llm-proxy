@@ -824,3 +824,52 @@ One line each; details in the task entries above. Task PRs: 1→#1, 2→#2,
     `content.parts` emits the same `upstream` "Upstream sent an
     undecodable stream chunk" error as the array-shape guards instead
     of being skipped.
+## v1.1 Task 10: Gemini tools (non-streaming) + toGeminiSchema
+
+- Spec sections implemented: §3.4 Gemini row —
+  `tools[].functionDeclarations` ↔ canonical `tools` (parameters
+  through `toGeminiSchema` on encode); `toolConfig.functionCallingConfig`
+  ↔ `toolChoice` (`AUTO`/`MODE_UNSPECIFIED`→`auto`, `NONE`→`none`,
+  `ANY`→`required`, `ANY`+`allowedFunctionNames:[n]`→function choice;
+  `ANY` with >1 allowed names has no canonical equivalent →
+  ValidationError); `functionCall` parts ↔ `toolCalls`
+  (`functionCall.id` when present, else injected `ids()`; `id` dropped
+  on encode); canonical tool messages → `functionResponse` parts
+  (`name` resolved from the matching assistant call in the same
+  request; content sent as a JSON object when it parses as one,
+  otherwise `{ "content": "<string>" }`; consecutive tool messages
+  share one `user` turn; no matching call → ValidationError).
+- `toGeminiSchema` allow-list (read 2026-10-27 from
+  https://ai.google.dev/api/generate-content#Schema — the Schema
+  object moved there from caching#Schema): `type`, `format`, `title`,
+  `description`, `nullable`, `enum`, `maxItems`, `minItems`,
+  `properties`, `required`, `minProperties`, `maxProperties`,
+  `minLength`, `maxLength`, `pattern`, `example`, `anyOf`,
+  `propertyOrdering`, `items`, `minimum`, `maximum` — the documented
+  fields minus `default`. The doc lists `default` as accepted and
+  ignored ("included here and ignored so that developers who send
+  schemas with a `default` field don't get unknown-field errors");
+  Owner decision (2026-10-27, option a): drop it anyway, keep the
+  plan's test verbatim. Recursion into `properties.*`, `items` and
+  `anyOf` at every depth; the input is never mutated.
+- `Type` case: `type` is passed through verbatim (lowercase
+  JSON-Schema values such as `"object"`/`"string"`). The enum table
+  lists uppercase names (`STRING`, `OBJECT`, …, plus `NULL`), but
+  Google's own `FunctionDeclaration.parameters` /
+  `parametersJsonSchema` examples on the same page use lowercase
+  (`"type": "object"`, `"type": "string"`, `"type": "integer"`), as
+  does the function-calling guide example — lowercase is what those
+  documented examples send for this field, so no case mapping.
+- `functionCallingConfig.mode: "VALIDATED"` (Mode enum on
+  https://ai.google.dev/api/caching#Mode, read 2026-10-27) has no
+  canonical equivalent: decode throws ValidationError naming the mode
+  (400 in the Gemini dialect); encode never emits it.
+- Owner decision (2026-10-27, option a) — contract snapshots:
+  approved updating exactly one entry,
+  `Adapter golden fixtures > gemini > request fixtures > tools →
+  canonical matches snapshot 1` (gains `tools`; the fixture has no
+  `toolConfig`, so no `toolChoice`), in its own commit
+  `test: update tool snapshots (owner-approved, option a)`.
+- Files outside the Files block: none —
+  `tests/contracts/__snapshots__/fixtures.test.ts.snap` is the
+  owner-approved snapshot update above.

@@ -183,6 +183,21 @@ One entry per decision or per task that deviated from the plan or spec. Newest a
   since v1.0: pino-http's default serializers logged client credential headers and `?key=` URLs;
   fixed here per owner decision 2026-10-27 (PR #4, option a).
 
+## v1.0.1 follow-up: live default model `qwen2.5:0.5b`
+
+- Owner decision 2026-10-27 (PR #5 comment, "option 2"): the live suite's default Ollama model
+  changes from `qwen3:0.6b` (D5) to `qwen2.5:0.5b`, a small non-thinking model. `qwen3:0.6b` stays
+  available opt-in via `LIVE_OLLAMA_MODEL`.
+- Reason: `qwen3:0.6b` is a thinking model; it sometimes spends the whole token budget on
+  `thinking`, leaving `content` empty and making the `'openai' → 'ollama' chat round trip` live
+  test intermittently red — confirmed in the PR #5 review (1 failure in 3 runs). Task 2's
+  `max_tokens: 512` for Ollama targets only reduced, not eliminated, the flake.
+- Change surface: `tests/live/live.helpers.ts` default; the same default named in the v1.0.1 spec
+  (§1.3, §3.5, §3.7, D5 row) and plan (header, Task 1 interfaces, Tasks 7 and 9) so later tasks
+  pull the new model.
+- Follow-up for v1.1: the proxy currently drops the `thinking` field from Ollama responses;
+  surfacing it (e.g. as reasoning content) is a v1.1 item, not fixed here.
+
 ## v1.0.1 Task 5: Streaming refusal and unsupported Gemini methods
 
 - `isSupportedPath` returns `true` for a path that doesn't parse to `<m>:<method>` (no `:` in the

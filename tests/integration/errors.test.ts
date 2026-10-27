@@ -540,3 +540,141 @@ describe("privacy (spec §3.3)", () => {
     expect(capturedLogLines()).not.toContain("API key not valid");
   });
 });
+
+describe("streaming refusal and unsupported gemini methods (spec §3.2)", () => {
+  const STREAMING_MESSAGE =
+    'Streaming is not supported yet (planned for v1.1). Send "stream": false.';
+
+  // Gemini selects streaming by endpoint, not a body field — the other
+  // three sources carry stream in the request body.
+  const STREAM_BODY_SOURCES: Provider[] = ["openai", "anthropic", "ollama"];
+
+  it.each(
+    STREAM_BODY_SOURCES.flatMap((source) =>
+      providers.map((target) => ({ source, target })),
+    ),
+  )(
+    "$source stream:true → 501 in source dialect, no upstream call ($target)",
+    async ({ source, target }) => {
+      setPair(source, target);
+
+      const call = SOURCE_CALL[source];
+      const res = await request(app)
+        .post(call.path)
+        .send({ ...(call.body as Record<string, unknown>), stream: true });
+
+      expect(res.status, JSON.stringify(res.body)).toBe(501);
+      expect(res.body).toEqual(
+        adapters[source].fromCanonicalError(
+          makeCanonicalError("unsupported", STREAMING_MESSAGE),
+        ),
+      );
+      expect(capturedRequests[target]).toHaveLength(0);
+    },
+  );
+
+  it.each(providers)(
+    "gemini :streamGenerateContent → 501, no upstream call ($target)",
+    async (target) => {
+      setPair("gemini", target);
+
+      const res = await request(app)
+        .post("/v1beta/models/gemini-2.0-flash:streamGenerateContent")
+        .send(geminiFixtures.requests.basic as object);
+
+      expect(res.status, JSON.stringify(res.body)).toBe(501);
+      expect(res.body).toEqual(
+        adapters.gemini.fromCanonicalError(
+          makeCanonicalError("unsupported", STREAMING_MESSAGE),
+        ),
+      );
+      expect(capturedRequests[target]).toHaveLength(0);
+    },
+  );
+
+  it("gemini :streamGenerateContent with ?alt=sse → 501, no upstream call", async () => {
+    setPair("gemini", "ollama");
+
+    const res = await request(app)
+      .post("/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse")
+      .send(geminiFixtures.requests.basic as object);
+
+    expect(res.status, JSON.stringify(res.body)).toBe(501);
+    expect(res.body).toEqual(
+      adapters.gemini.fromCanonicalError(
+        makeCanonicalError("unsupported", STREAMING_MESSAGE),
+      ),
+    );
+    expect(capturedRequests.ollama).toHaveLength(0);
+  });
+
+  it("gemini percent-encoded %3AstreamGenerateContent → 501, no upstream call", async () => {
+    setPair("gemini", "ollama");
+
+    const res = await request(app)
+      .post("/v1beta/models/gemini-2.0-flash%3AstreamGenerateContent")
+      .send(geminiFixtures.requests.basic as object);
+
+    expect(res.status, JSON.stringify(res.body)).toBe(501);
+    expect(res.body).toEqual(
+      adapters.gemini.fromCanonicalError(
+        makeCanonicalError("unsupported", STREAMING_MESSAGE),
+      ),
+    );
+    expect(capturedRequests.ollama).toHaveLength(0);
+  });
+
+  it.each(
+    providers.flatMap((target) =>
+      ["countTokens", "embedContent"].map((method) => ({ target, method })),
+    ),
+  )(
+    "gemini non-chat method :$method → 501 in gemini dialect ($target)",
+    async ({ target, method }) => {
+      setPair("gemini", target);
+
+      const res = await request(app)
+        .post(`/v1beta/models/gemini-2.0-flash:${method}`)
+        .send(geminiFixtures.requests.basic as object);
+
+      expect(res.status, JSON.stringify(res.body)).toBe(501);
+      expect(res.body).toEqual(
+        adapters.gemini.fromCanonicalError(
+          makeCanonicalError("unsupported", `${method} is not supported`),
+        ),
+      );
+      expect(capturedRequests[target]).toHaveLength(0);
+    },
+  );
+
+  it("gemini non-chat method on a tunedModels path → 501", async () => {
+    setPair("gemini", "ollama");
+
+    const res = await request(app)
+      .post("/v1beta/models/tunedModels/my-model:countTokens")
+      .send(geminiFixtures.requests.basic as object);
+
+    expect(res.status, JSON.stringify(res.body)).toBe(501);
+    expect(res.body).toEqual(
+      adapters.gemini.fromCanonicalError(
+        makeCanonicalError("unsupported", "countTokens is not supported"),
+      ),
+    );
+    expect(capturedRequests.ollama).toHaveLength(0);
+  });
+
+  it.each(providers)(
+    "stream:false is accepted ($source → ollama)",
+    async (source) => {
+      setPair(source, "ollama");
+
+      const call = SOURCE_CALL[source];
+      const res = await request(app)
+        .post(call.path)
+        .send({ ...(call.body as Record<string, unknown>), stream: false });
+
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(capturedRequests.ollama).toHaveLength(1);
+    },
+  );
+});

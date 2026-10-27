@@ -182,3 +182,23 @@ One entry per decision or per task that deviated from the plan or spec. Newest a
 - Files outside the Files block: `src/middleware/request-logger.ts` (+ test) — pre-existing leak
   since v1.0: pino-http's default serializers logged client credential headers and `?key=` URLs;
   fixed here per owner decision 2026-10-27 (PR #4, option a).
+
+## v1.0.1 Task 5: Streaming refusal and unsupported Gemini methods
+
+- `isSupportedPath` returns `true` for a path that doesn't parse to `<m>:<method>` (no `:` in the
+  tail, e.g. bare `POST /v1beta/models`). The spec's refusal rule is scoped to the `<m>:<method>`
+  form, and `modelFromPath` already falls back to the body model for such paths — refusing them
+  would be a behaviour change the spec doesn't name.
+- Ollama-source requests without `stream` stay non-streaming (Task 2's absent → `stream: false`
+  mapping is untouched). `stream: false` is accepted from every source; only an explicit `true`
+  or the Gemini `:streamGenerateContent` endpoint triggers the 501.
+- Files outside the Files block:
+  - `src/transformers/adapters/anthropic.adapter.ts` (+ `anthropic.adapter.test.ts`) — required:
+    the Anthropic adapter dropped the incoming `stream` field, so `canonical.stream` could never
+    be `true` for an Anthropic client and the task's
+    `"anthropic stream:true → 501"` test could not pass. Added the same `stream === true`
+    passthrough the Ollama adapter uses (absent/false identical in canonical).
+  - `src/utils/errors.test.ts` — unit test for the new `NotSupportedError` (501, kind
+    `unsupported`).
+  - `src/transformers/adapters/index.test.ts` — unit tests for the new `isStreamPath` /
+    `isSupportedPath` route functions.

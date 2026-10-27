@@ -6,13 +6,19 @@ import {
   type ProviderRoute,
 } from "../transformers";
 import { findSourceRoute } from "../transformers/adapters";
-import { postJson, getJson } from "./http-client";
+import { postJson, getJson, postStream } from "./http-client";
+import { runStreamPipeline } from "./stream-pipeline";
 import { toClientError } from "./upstream-errors";
 import {
   canonicalModelListSchema,
   canonicalRequestSchema,
   canonicalResponseSchema,
 } from "../types/canonical.schema";
+import type {
+  CanonicalRequest,
+  CanonicalStreamEvent,
+  StreamDecoder,
+} from "../types/canonical.types";
 import {
   NotSupportedError,
   TransformError,
@@ -22,7 +28,19 @@ import {
 import { logger } from "../utils/logger";
 
 export interface ProxyResult {
-  body: unknown;
+  body?: unknown;
+  headers?: Record<string, string>;
+  stream?: {
+    contentType: string;
+    chunks: AsyncIterable<string>;
+  };
+}
+
+export interface ProxyRequestOptions {
+  /** Incoming query parameters (encoders may branch on them, §3.5) */
+  query?: Record<string, string>;
+  /** Client disconnect — aborts the upstream request */
+  signal?: AbortSignal;
 }
 
 /**
@@ -97,6 +115,7 @@ export async function proxyRequest(
   method: string,
   body: unknown,
   requestId: string,
+  opts?: ProxyRequestOptions,
 ): Promise<ProxyResult | null> {
   // Cheap pre-check: only recognized provider API paths are proxied.
   const isProviderPath = Object.values(PROVIDER_ROUTES)
@@ -147,15 +166,6 @@ export async function proxyRequest(
     });
   }
 
-  // Honest streaming refusal (spec §3.2, E3): a `stream` body flag on
-  // the other sources, the dedicated streaming endpoint on Gemini.
-  // Refused after validation, before any upstream call.
-  if (parsed.data.stream === true || route.isStreamPath?.(path) === true) {
-    throw new NotSupportedError(
-      'Streaming is not supported yet (planned for v1.1). Send "stream": false.',
-    );
-  }
-
   // The model comes from the source path when the provider puts it there
   // (Gemini), otherwise from the canonical request. An explicitly empty
   // model in the path (e.g. /v1beta/models/:generateContent) is a client
@@ -169,6 +179,21 @@ export async function proxyRequest(
   }
   const model = modelFromPath ?? parsed.data.model;
   parsed.data.model = model;
+
+  // Streaming (spec §3.2): a `stream` body flag on the JSON-body sources,
+  // the dedicated streaming endpoint on Gemini.
+  if (parsed.data.stream === true || route.isStreamPath?.(path) === true) {
+    return proxyChatStream(
+      parsed.data,
+      body,
+      model,
+      config,
+      sourceApi,
+      targetApi,
+      requestId,
+      opts,
+    );
+  }
 
   const targetBody = adapters[targetApi].fromCanonicalRequest(parsed.data);
 
@@ -240,6 +265,113 @@ export async function proxyRequest(
   const sourceBody = adapters[sourceApi].fromCanonicalResponse(canonicalResp);
 
   return { body: sourceBody };
+}
+
+/**
+ * Streaming chat flow (spec §3.2): target decoder + source encoder,
+ * postStream for upstream bytes, runStreamPipeline for the pipe.
+ * Adapters still stubbed (Tasks 5–7) throw NotSupportedError here —
+ * the v1.0.1 501, before any upstream call.
+ */
+async function proxyChatStream(
+  canonical: CanonicalRequest,
+  sourceRequest: unknown,
+  model: string,
+  config: Config,
+  sourceApi: Provider,
+  targetApi: Provider,
+  requestId: string,
+  opts?: ProxyRequestOptions,
+): Promise<ProxyResult> {
+  const decoder = adapters[targetApi].createStreamDecoder(model);
+  const encoder = adapters[sourceApi].createStreamEncoder({
+    sourceRequest,
+    query: opts?.query ?? {},
+    requestedModel: model,
+  });
+
+  const targetBody = adapters[targetApi].fromCanonicalRequest(canonical);
+
+  const targetRoute = PROVIDER_ROUTES[targetApi].find(
+    (r) => r.kind === "chat",
+  )!;
+  const url = `${config.targetBaseUrl}${
+    targetRoute.streamRequestPath?.(model) ?? targetRoute.requestPath(model)
+  }`;
+
+  logger.info(
+    { requestId, sourceApi, targetApi, url, stream: true },
+    "Forwarding request to upstream",
+  );
+
+  const upstream = await postStream({
+    url,
+    headers: buildAuthHeaders(targetApi, config.targetApiKey),
+    body: targetBody,
+    timeoutMs: config.upstreamTimeoutMs,
+    retries: config.upstreamRetries,
+    requestId,
+    signal: opts?.signal,
+  }).catch((err) => {
+    throw err instanceof UpstreamError
+      ? toClientFacing(err, targetApi)
+      : err;
+  });
+
+  // Watch the event stream for the completion log line — the pipeline
+  // yields only encoded bytes, so the decoder is wrapped. Chunk contents
+  // are never logged (§3.2); only usage and the finish reason are.
+  const observed: CanonicalStreamEvent[] = [];
+  const recordingDecoder: StreamDecoder = {
+    feed(chunk) {
+      const events = decoder.feed(chunk);
+      observed.push(...events);
+      return events;
+    },
+    end() {
+      const events = decoder.end();
+      observed.push(...events);
+      return events;
+    },
+  };
+
+  const signal = opts?.signal ?? new AbortController().signal;
+
+  const chunks = (async function* (): AsyncGenerator<string> {
+    yield* runStreamPipeline({
+      upstream: upstream.body,
+      decoder: recordingDecoder,
+      encoder,
+      idleMs: config.upstreamStreamIdleMs,
+      signal,
+    });
+    const last = observed.at(-1);
+    if (last?.type === "message_end") {
+      const usageEvent = observed.find((e) => e.type === "usage");
+      logger.info(
+        {
+          requestId,
+          sourceApi,
+          targetApi,
+          model,
+          stream: true,
+          inputTokens:
+            usageEvent?.type === "usage"
+              ? usageEvent.usage.inputTokens
+              : undefined,
+          outputTokens:
+            usageEvent?.type === "usage"
+              ? usageEvent.usage.outputTokens
+              : undefined,
+          finishReason: last.finishReason,
+          upstreamDurationMs: upstream.durationMs,
+        },
+        "Request completed",
+      );
+    }
+  })();
+
+  return { stream: { contentType: encoder.contentType, chunks } };
 }
 
 /**

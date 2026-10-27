@@ -24,6 +24,8 @@ export interface ProviderRoute {
   pathPrefix: string;
   /** Upstream endpoint path (model only used by gemini chat) */
   requestPath: (model?: string) => string;
+  /** Upstream streaming endpoint path when it differs from requestPath */
+  streamRequestPath?: (model?: string) => string;
   /** Model id carried in the incoming path (gemini chat only) */
   modelFromPath?: (path: string) => string | undefined;
   /** Path names the provider's streaming endpoint (gemini chat only) */

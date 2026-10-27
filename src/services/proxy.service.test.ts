@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { readFileSync } from "node:fs";
 import { proxyRequest } from "./proxy.service";
 import { resetConfig } from "../config/env-config";
 import {
@@ -11,12 +12,14 @@ import { logger } from "../utils/logger";
 vi.mock("./http-client", () => ({
   postJson: vi.fn(),
   getJson: vi.fn(),
+  postStream: vi.fn(),
 }));
 
-import { postJson, getJson } from "./http-client";
+import { postJson, getJson, postStream } from "./http-client";
 
 const mockPostJson = vi.mocked(postJson);
 const mockGetJson = vi.mocked(getJson);
+const mockPostStream = vi.mocked(postStream);
 
 const VALID_OPENAI_REQUEST = {
   model: "gpt-4",
@@ -274,6 +277,58 @@ describe("proxyRequest", () => {
       finishReason: "stop",
       upstreamDurationMs: 10,
     });
+  });
+
+  it("stream branch returns stream, not body", async () => {
+    process.env.TARGET_API = "openai";
+    resetConfig();
+    const sse = readFileSync(
+      "tests/fixtures/streams/openai/text.sse",
+    ) as Uint8Array;
+    mockPostStream.mockResolvedValue({
+      status: 200,
+      durationMs: 5,
+      body: new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(sse);
+          c.close();
+        },
+      }),
+    });
+
+    const result = await proxyRequest(
+      "/v1/chat/completions",
+      "POST",
+      { ...VALID_OPENAI_REQUEST, stream: true },
+      "r1",
+    );
+
+    expect(result).not.toBeNull();
+    expect(result!.stream).toBeDefined();
+    expect(result!.body).toBeUndefined();
+    expect(result!.stream!.contentType).toBe("text/event-stream");
+
+    let out = "";
+    for await (const chunk of result!.stream!.chunks) out += chunk;
+    expect(out).toContain("data: {");
+    expect(out.trimEnd().endsWith("data: [DONE]")).toBe(true);
+    expect(mockPostJson).not.toHaveBeenCalled();
+  });
+
+  it("pair without stream support still returns 501", async () => {
+    // openai source → ollama target: the ollama decoder is still a stub
+    // until Task 6, so the v1.0.1 refusal applies before any upstream call.
+    const err = await proxyRequest(
+      "/v1/chat/completions",
+      "POST",
+      { ...VALID_OPENAI_REQUEST, stream: true },
+      "r1",
+    ).catch((e) => e);
+
+    expect(err).toBeInstanceOf(NotSupportedError);
+    expect(err.statusCode).toBe(501);
+    expect(mockPostStream).not.toHaveBeenCalled();
+    expect(mockPostJson).not.toHaveBeenCalled();
   });
 
   it("returns null for chat path with wrong method (GET)", async () => {

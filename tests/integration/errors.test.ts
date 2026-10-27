@@ -10,8 +10,11 @@ import {
 } from "vitest";
 import { http, HttpResponse, delay } from "msw";
 import { setupServer } from "msw/node";
+import express from "express";
+import pino from "pino";
 import request from "supertest";
 import { app } from "../../src/app";
+import { createRequestLogger } from "../../src/middleware/request-logger";
 import { resetConfig } from "../../src/config/env-config";
 import { adapters, type Provider } from "../../src/transformers";
 import { makeCanonicalError } from "../../src/utils/canonical-error";
@@ -20,6 +23,7 @@ import type { CanonicalErrorKind } from "../../src/types/canonical.types";
 import {
   upstreamHandlers,
   capturedRequests,
+  capturedHeaders,
   resetCaptured,
   resetOverrides,
   MOCK_BASE_URLS,
@@ -538,6 +542,180 @@ describe("privacy (spec §3.3)", () => {
 
     expect(res.status).toBe(502);
     expect(capturedLogLines()).not.toContain("API key not valid");
+  });
+});
+
+describe("client auth in native headers (spec §3.4)", () => {
+  // Distinctive value — assertions check it never reaches the upstream
+  // request or a log line.
+  const CLIENT_KEY = "client-key-9f8e7d6c";
+
+  const AUTH_STYLES: {
+    style: string;
+    apply: (r: request.Test, key: string) => request.Test;
+  }[] = [
+    {
+      style: "Authorization: Bearer",
+      apply: (r, key) => r.set("Authorization", `Bearer ${key}`),
+    },
+    { style: "x-api-key", apply: (r, key) => r.set("x-api-key", key) },
+    {
+      style: "x-goog-api-key",
+      apply: (r, key) => r.set("x-goog-api-key", key),
+    },
+    {
+      style: "?key= query parameter",
+      apply: (r, key) => r.query({ key }),
+    },
+  ];
+
+  /**
+   * app.ts reads PROXY_API_KEY when the app is built, so each test needs
+   * a fresh module graph — including the env-config from that same
+   * graph (the static imports point at the un-authed app).
+   */
+  async function authedApp(source: Provider, target: Provider) {
+    vi.stubEnv("PROXY_API_KEY", CLIENT_KEY);
+    process.env.SOURCE_API = source;
+    process.env.TARGET_API = target;
+    vi.resetModules();
+    const { app: authed } = await import("../../src/app");
+    const { resetConfig: freshReset } = await import(
+      "../../src/config/env-config"
+    );
+    freshReset();
+    return authed;
+  }
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it.each(
+    (["openai", "anthropic", "gemini"] as Provider[]).flatMap((source) =>
+      AUTH_STYLES.map((style) => ({ source, style })),
+    ),
+  )(
+    "rejects a wrong key via $style.style → 401 in $source dialect",
+    async ({ source, style }) => {
+      const authed = await authedApp(source, "ollama");
+      const call = SOURCE_CALL[source];
+
+      const res = await style.apply(
+        request(authed).post(call.path).send(call.body),
+        "wrong-key",
+      );
+
+      expect(res.status, JSON.stringify(res.body)).toBe(401);
+      expect(res.body).toEqual(
+        adapters[source].fromCanonicalError(
+          makeCanonicalError("authentication", "Invalid or missing API key"),
+        ),
+      );
+      expect(capturedRequests.ollama).toHaveLength(0);
+    },
+  );
+
+  it("client key is never forwarded upstream (gemini target)", async () => {
+    const authed = await authedApp("gemini", "gemini");
+
+    const upstreamUrls: string[] = [];
+    const onRequest = ({ request: req }: { request: Request }) => {
+      upstreamUrls.push(req.url);
+    };
+    server.events.on("request:start", onRequest);
+    try {
+      const res = await request(authed)
+        .post("/v1beta/models/gpt-4:generateContent")
+        .query({ key: CLIENT_KEY })
+        .send(geminiFixtures.requests.basic as object);
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+    } finally {
+      server.events.removeListener("request:start", onRequest);
+    }
+
+    // The upstream gets only the proxy's own key — in the header, never
+    // the client's.
+    const headers = capturedHeaders.gemini[0]!;
+    expect(headers.get("x-goog-api-key")).toBe("test-key");
+    for (const value of headers.values()) {
+      expect(value).not.toContain(CLIENT_KEY);
+    }
+
+    // And the upstream URL carries no key= parameter at all.
+    const geminiUrls = upstreamUrls.filter((u) =>
+      u.startsWith(MOCK_BASE_URLS.gemini),
+    );
+    expect(geminiUrls).toHaveLength(1);
+    for (const url of geminiUrls) {
+      expect(url).not.toContain("key=");
+      expect(url).not.toContain(CLIENT_KEY);
+    }
+  });
+
+  it("client key is never forwarded upstream (anthropic target)", async () => {
+    const authed = await authedApp("anthropic", "anthropic");
+
+    const upstreamUrls: string[] = [];
+    const onRequest = ({ request: req }: { request: Request }) => {
+      upstreamUrls.push(req.url);
+    };
+    server.events.on("request:start", onRequest);
+    try {
+      const res = await request(authed)
+        .post("/v1/messages")
+        .set("x-api-key", CLIENT_KEY)
+        .send(anthropicFixtures.requests.basic as object);
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+    } finally {
+      server.events.removeListener("request:start", onRequest);
+    }
+
+    const headers = capturedHeaders.anthropic[0]!;
+    expect(headers.get("x-api-key")).toBe("test-key");
+    expect(headers.get("authorization")).toBeNull();
+    for (const value of headers.values()) {
+      expect(value).not.toContain(CLIENT_KEY);
+    }
+
+    const anthropicUrls = upstreamUrls.filter((u) =>
+      u.startsWith(MOCK_BASE_URLS.anthropic),
+    );
+    expect(anthropicUrls).toHaveLength(1);
+    for (const url of anthropicUrls) {
+      expect(url).not.toContain("key=");
+      expect(url).not.toContain(CLIENT_KEY);
+    }
+  });
+
+  it("a request authenticated via ?key= leaves no key in the request log", async () => {
+    // Assert on the written line, not on logger call arguments:
+    // pino-http's serializers (which carry the redaction) run at write
+    // time, so the raw req/res in the call args still hold the key.
+    const lines: string[] = [];
+    const capture = pino(
+      { level: "debug" },
+      {
+        write: (chunk: string) => {
+          lines.push(chunk);
+        },
+      },
+    );
+    const mini = express();
+    mini.use(createRequestLogger(capture));
+    mini.post("/v1/chat/completions", (_req, res) => res.json({ ok: true }));
+
+    const res = await request(mini)
+      .post("/v1/chat/completions")
+      .query({ key: CLIENT_KEY, other: "1" })
+      .set("Authorization", `Bearer ${CLIENT_KEY}`)
+      .set("x-api-key", CLIENT_KEY)
+      .set("x-goog-api-key", CLIENT_KEY)
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.join("")).not.toContain(CLIENT_KEY);
   });
 });
 

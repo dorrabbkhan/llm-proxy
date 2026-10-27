@@ -235,3 +235,35 @@ One entry per decision or per task that deviated from the plan or spec. Newest a
   - `gh workflow run live.yml --ref <branch>` returned 404 before merge: GitHub only dispatches
     workflows that exist on the default branch, so the owner triggers the first live run after
     this PR merges.
+
+## v1.0.1 Task 8: Licence, CLA and contributor docs
+
+- `contributor-assistant/github-action` pinned to `v2.6.1`, the latest release.
+  The upstream repository was archived on 2026-03-23 (read-only; releases remain
+  functional) — noted for the owner alongside decision D2.
+- `cla-signatures` branch must pre-exist: the action stores signatures through
+  `repos.createOrUpdateFileContents`, and an empirical probe against the API
+  confirmed that endpoint returns 404 `Branch <name> not found` when the branch
+  is missing (it cannot create branches). Creating the branch is listed as an
+  owner action in the PR — per the action's README, the branch must exist but
+  must NOT contain `signatures/cla.json` (the action creates the file itself).
+- The `pull_request_target` workflow has no `actions/checkout` step and sets
+  explicit minimal permissions; only `secrets.GITHUB_TOKEN` is used.
+- Inside the moved "Adding a provider" section in CONTRIBUTING.md, the
+  `ProviderAdapter` method list was extended with `toCanonicalError` /
+  `fromCanonicalError` (added in Task 3) so the moved text matches the current
+  interface. The section is otherwise verbatim from README.md.
+- Files outside the Files block:
+  - `README.md` — replaced the "Adding a provider" section with a link to
+    `CONTRIBUTING.md#adding-a-provider`, as the task requires the section to
+    move. No other README changes (Task 9 owns the rest).
+- Owner decisions on PR #9 (2026-10-27):
+  - The CLA legal text is approved by the owner; the `# DRAFT — requires owner
+    review` marker was removed, so `CLA.md` is final.
+  - The owner email (`dorrabbk@gmail.com`) stays in `CLA.md` as the Project
+    Owner contact.
+  - `contributor-assistant/github-action` is pinned by commit SHA
+    (`ca4a40a7d1004f18d9960b404b97e5f30a505a08`, tag `v2.6.1`) because the
+    upstream repository was archived on 2026-03-23.
+  - The `cla-signatures` branch was created from main `fc0be60` on the owner's
+    request (the action requires the branch to pre-exist).

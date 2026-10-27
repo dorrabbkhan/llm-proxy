@@ -1,0 +1,37 @@
+name: Provider request
+description: Ask for support for a new upstream provider
+labels: [enhancement]
+body:
+  - type: input
+    id: provider
+    attributes:
+      label: Provider name
+      placeholder: "e.g. Mistral, Cohere, Qwen/DashScope"
+    validations:
+      required: true
+  - type: input
+    id: docs
+    attributes:
+      label: API documentation URL
+      description: Link to the provider's official chat-completions API docs.
+      placeholder: "https://..."
+    validations:
+      required: true
+  - type: textarea
+    id: surface
+    attributes:
+      label: API surface needed
+      description: >-
+        Which endpoints matter to you (chat completions, model list,
+        streaming, embeddings) and which source formats you'd pair it with.
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: >-
+        Compatibility notes (e.g. "OpenAI-compatible API"), auth header
+        style, quirks worth knowing.
+    validations:
+      required: false

@@ -11,8 +11,8 @@
     "test:watch": "vitest"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Dorrabb Khan",
+  "license": "Apache-2.0",
   "description": "Proxy that translates between LLM API formats (OpenAI, Gemini, Ollama, Anthropic) via a canonical intermediate format",
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.132.1",
@@ -40,5 +40,11 @@
   },
   "engines": {
     "node": ">=20"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dorrabbkhan/llm-proxy.git"
+  },
+  "bugs": "https://github.com/dorrabbkhan/llm-proxy/issues",
+  "homepage": "https://github.com/dorrabbkhan/llm-proxy#readme"
 }

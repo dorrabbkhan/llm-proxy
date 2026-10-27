@@ -1,0 +1,45 @@
+name: "CLA Assistant"
+
+# SECURITY NOTE: this workflow runs on pull_request_target, so it executes in
+# the context of the BASE repository with a write-scoped GITHUB_TOKEN — even
+# for pull requests from forks. It must never check out or run code from the
+# pull request. It doesn't: there is no actions/checkout step and the only
+# step is the pinned CLA Assistant action below.
+on:
+  issue_comment:
+    types: [created]
+  pull_request_target:
+    types: [opened, closed, synchronize]
+
+# Minimal permissions, per the action's README:
+permissions:
+  actions: write        # re-run the failed check workflow after a contributor signs
+  contents: write       # commit signatures/cla.json to the cla-signatures branch
+  pull-requests: write  # post the sign/recheck comments and lock merged PRs
+  statuses: write       # set the CLA status check on the pull request
+
+jobs:
+  CLAAssistant:
+    runs-on: ubuntu-latest
+    steps:
+      - name: "CLA Assistant"
+        # Run only on a PR event, or a comment that is exactly the sign
+        # phrase or "recheck" — never on arbitrary issue comments.
+        if: (github.event.comment.body == 'recheck' || github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA') || github.event_name == 'pull_request_target'
+        # Latest release, pinned by commit SHA: the upstream repository was
+        # archived on 2026-03-23 and is now read-only, so v2.6.1 will never
+        # move — the SHA makes the pin tamper-proof.
+        uses: contributor-assistant/github-action@ca4a40a7d1004f18d9960b404b97e5f30a505a08 # v2.6.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # No PERSONAL_ACCESS_TOKEN: signatures live in this repository, so
+          # the built-in GITHUB_TOKEN is sufficient.
+        with:
+          path-to-document: 'https://github.com/dorrabbkhan/llm-proxy/blob/main/CLA.md'
+          path-to-signatures: 'signatures/cla.json'
+          # Signatures live on a dedicated, unprotected branch. The branch
+          # must already exist: the action only calls the Contents API,
+          # which cannot create branches. Do NOT commit signatures/cla.json
+          # to it manually — the action creates the file itself.
+          branch: 'cla-signatures'
+          allowlist: 'dorrabbkhan,*[bot]'

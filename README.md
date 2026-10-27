@@ -145,17 +145,8 @@ any pair composes by construction.
 
 ## Adding a provider
 
-1. Create `src/transformers/adapters/newprovider.adapter.ts` implementing the
-   `ProviderAdapter` interface (`toCanonicalRequest`, `fromCanonicalRequest`,
-   `toCanonicalResponse`, `fromCanonicalResponse`, `toCanonicalModelList`,
-   `fromCanonicalModelList`).
-2. Register it in `adapters` and add its routes (`kind`, `method`,
-   `pathPrefix`, `requestPath`) to `PROVIDER_ROUTES` in
-   `src/transformers/adapters/index.ts`.
-3. Add it to `VALID_PROVIDERS` in `src/config/env-config.ts` and extend
-   `environment.d.ts` with its `*_API_KEY` / `*_API_BASE_URL` vars.
-4. Add fixtures in `tests/fixtures/` — the contract and pair tests pick them
-   up automatically and will tell you if the canonical output is wrong.
+Adding a provider costs one adapter file — see
+[CONTRIBUTING.md](CONTRIBUTING.md#adding-a-provider).
 
 ## Known limitations
 

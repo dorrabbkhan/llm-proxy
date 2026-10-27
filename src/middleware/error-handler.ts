@@ -122,7 +122,24 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
       err.message,
     );
   } else {
-    logger.error({ requestId, err }, "Unhandled error");
+    // Not err wholesale: body-parser errors carry the raw request body
+    // (prompt text) on `err.body`, and their message echoes a fragment
+    // of it — so entity.* errors log only their type.
+    const errType = (err as { type?: unknown } | null)?.type;
+    logger.error(
+      {
+        requestId,
+        errType,
+        message:
+          typeof errType === "string" && errType.startsWith("entity.")
+            ? `body-parser error: ${errType}`
+            : err instanceof Error
+              ? err.message
+              : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+      },
+      "Unhandled error",
+    );
   }
 
   // On a provider route every error — including auth and body-parser

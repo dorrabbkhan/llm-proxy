@@ -168,6 +168,11 @@ One entry per decision or per task that deviated from the plan or spec. Newest a
   the existing fallback to `parsed.data.model`.
 - `resolveSource` reads `req.path` (set from the URL, before the body parser) and never throws —
   a broken config leaves `sourceApi` unset and errors keep the generic shape.
+- The "Unhandled error" log line no longer serializes `err` wholesale: body-parser errors carry
+  the raw request body on `err.body` and echo a fragment of it in `err.message` (prompt text).
+  Non-ProxyError errors now log whitelisted fields only (`errType`, message, stack), and
+  `entity.*` errors log only `body-parser error: <type>` — pinned by the "malformed request body
+  is not echoed into the log" test.
 - Test notes: `tests/integration/errors.test.ts` sets `UPSTREAM_RETRIES=0` so 429/503 take the
   last-attempt path immediately without backoff sleeps (retry behaviour itself is covered in
   http-client.test.ts). Log capture spies on the real pino logger methods and serializes the call

@@ -445,6 +445,24 @@ describe("privacy (spec §3.3)", () => {
     },
   );
 
+  it("malformed request body is not echoed into the log", async () => {
+    setPair("openai", "ollama");
+    vi.spyOn(logger, "info");
+    vi.spyOn(logger, "warn");
+    vi.spyOn(logger, "error");
+    vi.spyOn(logger, "debug");
+
+    const res = await request(app)
+      .post("/v1/chat/completions")
+      .set("Content-Type", "application/json")
+      .send('{"prompt_secret_xyz":');
+
+    expect(res.status).toBe(400);
+    // body-parser errors carry the raw request body on err.body and echo
+    // a fragment in err.message — neither may reach a log line
+    expect(capturedLogLines()).not.toContain("prompt_secret_xyz");
+  });
+
   it("upstream body is never written to a log line", async () => {
     setPair("openai", "ollama");
     mockUpstream("ollama", 500, { error: "upstream exploded" });

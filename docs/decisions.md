@@ -217,3 +217,21 @@ One entry per decision or per task that deviated from the plan or spec. Newest a
     `unsupported`).
   - `src/transformers/adapters/index.test.ts` — unit tests for the new `isStreamPath` /
     `isSupportedPath` route functions.
+
+## v1.0.1 Task 7: CI workflows — Ollama model cache outside the workspace
+
+- Deviations from the plan's literal Step 2 (`.github/workflows/live.yml`):
+  - The model cache lives at `/home/runner/.ollama-models` (the ubuntu-latest runner's home)
+    bind-mounted into the `ollama/ollama` service as `/root/.ollama` — not `~/.ollama` and not
+    inside `github.workspace`. Inside the workspace, `actions/checkout` could clean or replace
+    the directory the running service is bound to. The `actions/cache` `path:` is the same
+    literal path. Docker creates the host dir as root when the service starts, so a
+    `sudo mkdir -p` + `sudo chown -R "$USER"` step runs before the cache step (the restore runs
+    as `runner`), and an `if: always()` step at the end re-chowns so the post-job cache save
+    can read the root-owned files the pull wrote. Restoring after service start is safe:
+    Ollama reads model files at request time from the same bind-mounted directory.
+  - Added a "Wait for Ollama" readiness step (60 s timeout, `curl /api/tags` every 2 s) before
+    `docker exec ... ollama pull`; the service needs a moment to start listening.
+  - `gh workflow run live.yml --ref <branch>` returned 404 before merge: GitHub only dispatches
+    workflows that exist on the default branch, so the owner triggers the first live run after
+    this PR merges.

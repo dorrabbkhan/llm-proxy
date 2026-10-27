@@ -402,3 +402,67 @@ One line each; details in the task entries above. Task PRs: 1→#1, 2→#2,
   `sequentialIds` stays `call_0`, `call_1`, … for deterministic tests.
 - `createUtf8Decoder` flushes on an empty `Uint8Array` (a truncated trailing
   character becomes U+FFFD); decoders call it from `end()`.
+
+## v1.1 Task 3: stream fixture corpus
+
+- `tests/fixtures/streams/` holds raw provider stream bytes plus a `<case>.json`
+  (`source`, `date`, `model`, `expectedEvents`, `nonStreaming`) per case.
+  `tests/contracts/stream-fixtures.test.ts` validates them; decoding the bytes is
+  exercised by the decoder tasks (4–7).
+- Sources: Ollama cases recorded live (`npm run record:streams`,
+  ollama 0.40.11, `qwen2.5:0.5b`); Anthropic cases verbatim from
+  docs.claude.com streaming examples; OpenAI `text` verbatim from the
+  API-reference streaming example and `tool_call` from the recorded
+  gpt-4o stream in `openai/openai-go`'s `streamaccumulator_test.go`;
+  Gemini cases from recorded `streamGenerateContent?alt=sse` exchanges in
+  `google/adk-go` httprr traces and a `googleapis/js-genai` test recording
+  (Google-published captures — real provider bytes, per spec §4.1's
+  "documented examples verbatim, or owner-recorded" fallback).
+- Omissions (no documented/recorded provider bytes found; wire-format claims
+  without evidence are not allowed):
+  - `openai`: `parallel_tool_calls`, `after_tool_result`, `max_tokens`,
+    `error` — current docs only show Responses-API streaming for tool calls;
+    needs owner-recorded fixtures.
+  - `anthropic`: `parallel_tool_calls`, `after_tool_result`, `max_tokens` —
+    the streaming docs publish text, tool_use and error examples only.
+  - `gemini`: `max_tokens`, `error` — no recorded MAX_TOKENS or in-stream
+    `{"error":…}` exchange found in Google's published captures.
+  - `ollama`: `error` is recorded, but note it comes from a 404 response
+    line — Ollama answers errors as a single `{"error":"…"}` body, and the
+    documented in-stream form is the same line shape. No public way found to
+    trigger a mid-stream error line.
+- Edits to captured bytes, disclosed: the OpenAI `tool_call` capture drops the
+  second synthetic `choices:[]` usage chunk the SDK authors added for a
+  token-details accumulator test (real streams emit exactly one). The OpenAI
+  `text` doc example's literal `: Intermediate chat completion chunks
+  omitted.` comment line is kept verbatim (it also exercises comment
+  handling); no chunks were invented. The Gemini `tool_call` `.sse` is
+  re-serialized `data:` framing around the recording's verbatim JSON payload.
+- Conventions the decoder tasks must follow (resolved ambiguities, spec §3.1
+  rules leave these open):
+  - Generated IDs come from `sequentialIds()` in emission order: when the wire
+    has no message ID (Ollama), `message_start.id` draws `call_0` first; tool
+    call IDs use the wire `id` when present (OpenAI `call_…`, Anthropic
+    `toolu_…`, Ollama `call_…`) and draw `call_0`, `call_1`, … when absent
+    (Gemini; the wire `responseId` is used for `message_start.id` there).
+  - Empty `content`/argument strings produce no `text_delta`/`tool_call_delta`
+    event (e.g. OpenAI's opening `{"role":"assistant","content":""}` chunk).
+  - `usage` is emitted once, before `message_end`: Anthropic merges
+    `message_start.usage.input_tokens` with `message_delta`'s cumulative
+    `output_tokens`; Gemini takes the last chunk's cumulative `usageMetadata`;
+    OpenAI takes the single `choices:[]` usage chunk; Ollama the `done:true`
+    line's `prompt_eval_count`/`eval_count`.
+  - `message_end.finishReason` is canonical: Anthropic `tool_use`, OpenAI
+    `tool_calls`, and a Gemini/Ollama stream ending in tool calls all become
+    `tool_call`; Ollama `done_reason:"length"` becomes `length`.
+- `nonStreaming` twins are embedded only where the current adapters produce an
+  equal canonical response on `message`/`finishReason`/`usage`
+  (ollama `text` and `after_tool_result` — recorded with `temperature:0`, and
+  gemini `text` where the single chunk is itself a complete
+  `GenerateContentResponse`). They are `null` for tool cases (tool mapping
+  lands in Tasks 8–10) and for ollama `max_tokens` (the non-stream adapter maps
+  `done` to `"stop"` and ignores `done_reason:"length"` — follow-up).
+- Files outside the Files block: none (the `<case>.nonstreaming.json` twins
+  are inside the created `tests/fixtures/streams/` tree, which the Files block
+  covers as `<case>.{sse|ndjson}` plus `<case>.json`; the extra twin files are
+  recorded provenance for the embedded `nonStreaming` bodies).

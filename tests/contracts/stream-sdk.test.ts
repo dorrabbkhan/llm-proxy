@@ -1091,6 +1091,51 @@ describe("stream encoders via the provider SDK", () => {
     expect(String(warnSpy.mock.calls[0]![0])).toContain("1");
   });
 
+  it("gemini encoder warns on duplicate tool_call_start and keeps the first call", () => {
+    // A second tool_call_start for an index that is already open is
+    // ignored — the buffered call is kept and the warn carries only
+    // the event type and index (no names, ids or arguments).
+    const warnSpy = vi.spyOn(logger, "warn");
+    const events: CanonicalStreamEvent[] = [
+      { type: "message_start", id: "resp-1", model: "m" },
+      { type: "tool_call_start", index: 0, id: "call_a", name: "get_weather" },
+      { type: "tool_call_delta", index: 0, argumentsDelta: '{"city":' },
+      { type: "tool_call_start", index: 0, id: "call_b", name: "get_time" },
+      { type: "tool_call_delta", index: 0, argumentsDelta: '"Paris"}' },
+      { type: "tool_call_end", index: 0 },
+      { type: "message_end", finishReason: "tool_call" },
+    ];
+    const out = encodeGemini(events, GEMINI_STREAMING_REQUEST, {});
+
+    const elements = JSON.parse(out) as {
+      candidates?: {
+        content?: {
+          parts?: {
+            functionCall?: { id?: string; name?: string; args?: unknown };
+          }[];
+        };
+      }[];
+    }[];
+    const calls = elements.flatMap(
+      (el) =>
+        el.candidates?.[0]?.content?.parts
+          ?.map((p) => p.functionCall)
+          .filter((fc) => fc !== undefined) ?? [],
+    );
+    expect(calls).toEqual([
+      { id: "call_a", name: "get_weather", args: { city: "Paris" } },
+    ]);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const warnMessage = String(warnSpy.mock.calls[0]![0]);
+    expect(warnMessage).toContain("tool_call_start");
+    expect(warnMessage).toContain("0");
+    expect(warnMessage).not.toContain("get_weather");
+    expect(warnMessage).not.toContain("get_time");
+    expect(warnMessage).not.toContain("call_a");
+    expect(warnMessage).not.toContain("call_b");
+    expect(warnMessage).not.toContain("Paris");
+  });
+
   it("gemini encoder writes nothing after a terminal event", () => {
     const afterEnd = geminiAdapter.createStreamEncoder({
       sourceRequest: GEMINI_STREAMING_REQUEST,

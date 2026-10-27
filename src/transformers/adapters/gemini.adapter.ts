@@ -36,6 +36,10 @@ const FinishReason = {
   MAX_TOKENS: "MAX_TOKENS",
   SAFETY: "SAFETY",
   RECITATION: "RECITATION",
+  BLOCKLIST: "BLOCKLIST",
+  PROHIBITED_CONTENT: "PROHIBITED_CONTENT",
+  SPII: "SPII",
+  IMAGE_SAFETY: "IMAGE_SAFETY",
 } as const;
 type FinishReason = (typeof FinishReason)[keyof typeof FinishReason];
 
@@ -280,6 +284,14 @@ export function mapFinishReason(
     case "SAFETY":
     case FinishReason.RECITATION:
     case "RECITATION":
+    case FinishReason.BLOCKLIST:
+    case "BLOCKLIST":
+    case FinishReason.PROHIBITED_CONTENT:
+    case "PROHIBITED_CONTENT":
+    case FinishReason.SPII:
+    case "SPII":
+    case FinishReason.IMAGE_SAFETY:
+    case "IMAGE_SAFETY":
       return "content_filter";
     default:
       return "stop";

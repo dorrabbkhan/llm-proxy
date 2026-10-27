@@ -803,3 +803,24 @@ One line each; details in the task entries above. Task PRs: 1→#1, 2→#2,
   target plus the `:streamGenerateContent` refusal case pinned the
   refusal path this task removes; each was rewritten as a streaming
   assertion (named in the task instruction as required).
+- Fix round 1 (owner-requested):
+  - `mapFinishReason` maps `BLOCKLIST`, `PROHIBITED_CONTENT`, `SPII`
+    and `IMAGE_SAFETY` to `content_filter` alongside
+    `SAFETY`/`RECITATION` — all four verified 2026-10-27 against the
+    FinishReason enum at
+    https://ai.google.dev/api/generate-content#FinishReason.
+    `IMAGE_SAFETY` is in the doc but absent from the installed
+    `@google/generative-ai` 0.24.1 enum, so the adapter test casts
+    it. No other mapping changed (STOP, MAX_TOKENS, the default and
+    the encode direction are untouched).
+  - Encoder: a `tool_call_start` for an index that is already open
+    `logger.warn`s (event type and index only — no names, ids or
+    arguments, matching the unknown-index warn) and keeps the first
+    call's buffer; the duplicate start is ignored.
+  - Decoder: `end()` sets `finished` when it emits the "Upstream
+    stream ended without completing" error — a second `end()` or any
+    later `feed()` emits nothing.
+  - Decoder: a non-object member inside `candidates` or inside
+    `content.parts` emits the same `upstream` "Upstream sent an
+    undecodable stream chunk" error as the array-shape guards instead
+    of being skipped.

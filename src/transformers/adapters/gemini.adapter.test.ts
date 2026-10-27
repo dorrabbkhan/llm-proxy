@@ -235,6 +235,29 @@ describe('Gemini Adapter', () => {
       expect(toCanonicalResponse(makeResponse(FinishReason.MAX_TOKENS), 'gemini-pro').finishReason).toBe('length');
       expect(toCanonicalResponse(makeResponse(FinishReason.SAFETY), 'gemini-pro').finishReason).toBe('content_filter');
     });
+
+    it('should map safety finish reasons to content_filter', () => {
+      const makeResponse = (finishReason: FinishReason): GenerateContentResponse => ({
+        candidates: [
+          {
+            content: { role: 'model', parts: [{ text: '' }] },
+            finishReason,
+            index: 0,
+          },
+        ],
+      });
+
+      // IMAGE_SAFETY is in ai.google.dev/api/generate-content#FinishReason
+      // but predates the installed SDK's enum.
+      for (const reason of [
+        FinishReason.BLOCKLIST,
+        FinishReason.PROHIBITED_CONTENT,
+        FinishReason.SPII,
+        'IMAGE_SAFETY' as FinishReason,
+      ]) {
+        expect(toCanonicalResponse(makeResponse(reason), 'gemini-pro').finishReason).toBe('content_filter');
+      }
+    });
   });
 
   describe('fromCanonicalResponse', () => {

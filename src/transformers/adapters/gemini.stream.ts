@@ -22,6 +22,9 @@ import {
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Obj = Record<string, any>;
 
+const isObj = (v: unknown): v is Obj =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
 /**
  * Gemini `streamGenerateContent?alt=sse` → canonical events (spec §3.3,
  * ai.google.dev/api/generate-content#method:-models.streamgeneratecontent
@@ -76,7 +79,11 @@ export function createStreamDecoder(
       finished = true;
       return;
     }
-    if (obj.candidates != null && !Array.isArray(obj.candidates)) {
+    if (
+      obj.candidates != null &&
+      (!Array.isArray(obj.candidates) ||
+        obj.candidates.some((c: unknown) => !isObj(c)))
+    ) {
       failUndecodable(out);
       return;
     }
@@ -92,7 +99,10 @@ export function createStreamDecoder(
     // matching toCanonicalResponse's candidates[0].
     const candidate = obj.candidates?.[0];
     const parts = candidate?.content?.parts;
-    if (parts != null && !Array.isArray(parts)) {
+    if (
+      parts != null &&
+      (!Array.isArray(parts) || parts.some((p: unknown) => !isObj(p)))
+    ) {
       failUndecodable(out);
       return;
     }
@@ -157,11 +167,11 @@ export function createStreamDecoder(
       failUndecodable(out);
       return;
     }
-    if (typeof obj !== "object" || obj === null || Array.isArray(obj)) {
+    if (!isObj(obj)) {
       failUndecodable(out);
       return;
     }
-    handleObject(obj as Obj, out);
+    handleObject(obj, out);
   }
 
   function drain(
@@ -189,6 +199,7 @@ export function createStreamDecoder(
             "Upstream stream ended without completing",
           ),
         });
+        finished = true;
       }
       return out;
     },
@@ -295,6 +306,12 @@ export function createStreamEncoder(
             },
           });
         case "tool_call_start":
+          if (calls.has(event.index)) {
+            logger.warn(
+              `Gemini stream encoder: ${event.type} for already-open tool-call index ${event.index}; keeping the first call`,
+            );
+            return "";
+          }
           calls.set(event.index, {
             id: event.id,
             name: event.name,

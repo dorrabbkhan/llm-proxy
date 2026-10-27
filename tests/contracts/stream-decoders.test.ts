@@ -256,6 +256,79 @@ describe("stream decoders", () => {
     }
   });
 
+  it("gemini decoder: non-object candidate or part → error event", () => {
+    // A member of candidates or content.parts that isn't a plain
+    // object is the same malformed-response error as the array-shape
+    // guards — never silently skipped.
+    for (const payload of [
+      '{"candidates":[5]}',
+      '{"candidates":[null,{"content":{"parts":[{"text":"x"}]},"finishReason":"STOP"}]}',
+      '{"candidates":[{"content":{"parts":["x",{"text":"hi"}]},"finishReason":"STOP"}]}',
+      '{"candidates":[{"content":{"parts":[null]}}]}',
+    ]) {
+      const events = decode("gemini", "gemini-2.5-flash", [
+        new TextEncoder().encode(`data: ${payload}\n\n`),
+      ]);
+      expect(events.at(-1)?.type, `payload ${payload}`).toBe("error");
+      expect(events.at(-1)).toMatchObject({
+        error: {
+          kind: "upstream",
+          status: 502,
+          message: "Upstream sent an undecodable stream chunk",
+        },
+      });
+    }
+  });
+
+  it("gemini decoder end() is idempotent", () => {
+    // The truncation error finishes the stream — a second end() and
+    // any later feed() emit nothing.
+    const decoder = adapters.gemini.createStreamDecoder(
+      "gemini-2.5-flash",
+      sequentialIds(),
+    );
+    expect(decoder.end()).toEqual([
+      {
+        type: "error",
+        error: {
+          kind: "upstream",
+          status: 502,
+          message: "Upstream stream ended without completing",
+        },
+      },
+    ]);
+    expect(decoder.end()).toEqual([]);
+    const sse =
+      'data: {"candidates":[{"index":0,"content":{"role":"model","parts":[{"text":"x"}]},"finishReason":"STOP"}]}\n\n';
+    expect(decoder.feed(new TextEncoder().encode(sse))).toEqual([]);
+  });
+
+  it("gemini decoder maps safety finish reasons to content_filter", () => {
+    // Google's FinishReason enum (ai.google.dev/api/generate-content
+    // #FinishReason): BLOCKLIST, PROHIBITED_CONTENT, SPII and
+    // IMAGE_SAFETY are terminal safety stops like SAFETY/RECITATION —
+    // all map to canonical content_filter. Built inline: the recorded
+    // corpus carries only STOP/MAX_TOKENS.
+    for (const reason of [
+      "SAFETY",
+      "RECITATION",
+      "BLOCKLIST",
+      "PROHIBITED_CONTENT",
+      "SPII",
+      "IMAGE_SAFETY",
+    ]) {
+      const sse =
+        `data: {"candidates":[{"index":0,"content":{"role":"model","parts":[{"text":"x"}]},"finishReason":"${reason}"}],"usageMetadata":{"promptTokenCount":4,"candidatesTokenCount":1,"totalTokenCount":5}}\n\n`;
+      const events = decode("gemini", "gemini-2.5-flash", [
+        new TextEncoder().encode(sse),
+      ]);
+      expect(events.at(-1), `finishReason ${reason}`).toEqual({
+        type: "message_end",
+        finishReason: "content_filter",
+      });
+    }
+  });
+
   it("ollama decoder ignores thinking", () => {
     // Thinking content arrives in `message.thinking`, not
     // `message.content` (docs.ollama.com/api/chat — think:true models);

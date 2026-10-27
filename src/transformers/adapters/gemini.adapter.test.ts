@@ -481,6 +481,140 @@ describe('Gemini Adapter', () => {
         toCanonicalRequest(request as GenerateContentRequest),
       ).toThrow(ValidationError);
     });
+
+    it('gemini ANY with several allowedFunctionNames → 400', () => {
+      const request = {
+        contents: [{ role: 'user', parts: [{ text: 'Hi' }] }],
+        tools: [{ functionDeclarations: [{ name: 'f' }, { name: 'g' }] }],
+        toolConfig: {
+          functionCallingConfig: {
+            mode: 'ANY',
+            allowedFunctionNames: ['f', 'g'],
+          },
+        },
+      };
+
+      expect(() =>
+        toCanonicalRequest(request as GenerateContentRequest),
+      ).toThrow(ValidationError);
+    });
+
+    it('gemini non-function tool entry → 400 naming the tool type', () => {
+      const request = {
+        contents: [{ role: 'user', parts: [{ text: 'Hi' }] }],
+        tools: [{ googleSearchRetrieval: {} }],
+      };
+
+      expect(() =>
+        toCanonicalRequest(request as GenerateContentRequest),
+      ).toThrow(ValidationError);
+      expect(() =>
+        toCanonicalRequest(request as GenerateContentRequest),
+      ).toThrow('Gemini tool type "googleSearchRetrieval" is not supported');
+    });
+
+    it('gemini parallel calls to the same function keep their own results', () => {
+      const request = {
+        contents: [
+          {
+            role: 'model',
+            parts: [
+              {
+                functionCall: {
+                  name: 'get_weather',
+                  args: { city: 'Paris' },
+                },
+              },
+              {
+                functionCall: {
+                  name: 'get_weather',
+                  args: { city: 'London' },
+                },
+              },
+            ],
+          },
+          {
+            role: 'user',
+            parts: [
+              {
+                functionResponse: {
+                  name: 'get_weather',
+                  response: { temp: 72 },
+                },
+              },
+              {
+                functionResponse: {
+                  name: 'get_weather',
+                  response: { temp: 55 },
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      const result = toCanonicalRequest(request as GenerateContentRequest);
+      const calls = result.messages[0].toolCalls!;
+
+      expect(calls).toHaveLength(2);
+      expect(result.messages[1].role).toBe('tool');
+      expect(result.messages[1].toolCallId).toBe(calls[0].id);
+      expect(result.messages[1].content).toBe('{"temp":72}');
+      expect(result.messages[2].role).toBe('tool');
+      expect(result.messages[2].toolCallId).toBe(calls[1].id);
+      expect(result.messages[2].content).toBe('{"temp":55}');
+    });
+
+    it('gemini functionResponse id wins over name order', () => {
+      const request = {
+        contents: [
+          {
+            role: 'model',
+            parts: [
+              {
+                functionCall: {
+                  id: 'call_paris',
+                  name: 'get_weather',
+                  args: { city: 'Paris' },
+                },
+              },
+              {
+                functionCall: {
+                  id: 'call_london',
+                  name: 'get_weather',
+                  args: { city: 'London' },
+                },
+              },
+            ],
+          },
+          {
+            role: 'user',
+            parts: [
+              {
+                functionResponse: {
+                  id: 'call_london',
+                  name: 'get_weather',
+                  response: { temp: 55 },
+                },
+              },
+              {
+                functionResponse: {
+                  name: 'get_weather',
+                  response: { temp: 72 },
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      const result = toCanonicalRequest(request as GenerateContentRequest);
+
+      expect(result.messages[1].toolCallId).toBe('call_london');
+      expect(result.messages[1].content).toBe('{"temp":55}');
+      expect(result.messages[2].toolCallId).toBe('call_paris');
+      expect(result.messages[2].content).toBe('{"temp":72}');
+    });
   });
 
   describe('roundtrip', () => {

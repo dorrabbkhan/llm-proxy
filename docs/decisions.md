@@ -873,3 +873,26 @@ One line each; details in the task entries above. Task PRs: 1→#1, 2→#2,
 - Files outside the Files block: none —
   `tests/contracts/__snapshots__/fixtures.test.ts.snap` is the
   owner-approved snapshot update above.
+- Fix round 1:
+  - Decode: `callIds` was `Map<name, id>`, so a second call to the same
+    function overwrote the first and parallel same-name calls got each
+    other's results. Now a FIFO queue of pending call ids per name
+    (`PendingCallIds`); `functionResponse.id` still wins when present
+    (consuming its queue entry); a response with no pending call → the
+    existing "no matching function call" ValidationError.
+  - Decode: `tools[]` entries with keys other than
+    `functionDeclarations` (`codeExecution`, `googleSearch`,
+    `googleSearchRetrieval`, …) were silently dropped →
+    ValidationError `Gemini tool type "<key>" is not supported` (400),
+    consistent with the VALIDATED / multi-name ANY handling.
+  - File outside the Files block: `src/transformers/adapters/gemini.tools.ts`
+    (new, 339 lines) — the whole tool request/response mapping moved
+    out of `gemini.adapter.ts` (734 → 551 lines) for AGENTS.md rule 7
+    (single-purpose, ~400 lines); imported only by `gemini.adapter.ts`,
+    same pattern as `gemini.schema.ts` / `gemini.stream.ts`. No
+    behaviour change beyond the two fixes above.
+  - Tests added: `gemini parallel calls to the same function keep
+    their own results`, `gemini functionResponse id wins over name
+    order`, `gemini non-function tool entry → 400 naming the tool
+    type`, `gemini ANY with several allowedFunctionNames → 400` (the
+    last covers already-implemented behaviour).

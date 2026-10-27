@@ -4,13 +4,11 @@ import type {
   CanonicalResponse,
   CanonicalMessage,
   CanonicalContentPart,
-  CanonicalToolCall,
   CanonicalError,
   CanonicalErrorKind,
   CanonicalFinishReason,
   ProviderAdapter,
   CanonicalModelList,
-  CanonicalToolChoice,
   IdGenerator,
 } from "../../types/canonical.types";
 import {
@@ -19,27 +17,33 @@ import {
 } from "../../utils/canonical-error";
 import { ValidationError } from "../../utils/errors";
 import { createIdGenerator } from "../../utils/ids";
-import { parseToolArguments } from "../../utils/tool-args";
-import { logger } from "../../utils/logger";
-import { toGeminiSchema } from "./gemini.schema";
 import type {
   Content,
   GenerateContentRequest,
   GenerateContentResponse,
   Part,
   GeminiRole,
-  GeminiFunctionCall,
-  GeminiFunctionResponse,
   GeminiToolConfig,
-  FunctionDeclaration,
-  FunctionCallPart,
-  FunctionResponsePart,
-  ToolConfig,
 } from "../../types/gemini.types";
 import {
   createStreamDecoder,
   createStreamEncoder,
 } from "./gemini.stream";
+import {
+  appendFunctionResponsePart,
+  functionCallPart,
+  functionResponsePart,
+  isFunctionCallPart,
+  isFunctionResponsePart,
+  recordCallId,
+  toCanonicalToolCalls,
+  toCanonicalToolChoice,
+  toCanonicalToolMessages,
+  toCanonicalTools,
+  toGeminiToolConfig,
+  toGeminiTools,
+} from "./gemini.tools";
+import type { PendingCallIds } from "./gemini.tools";
 
 /**
  * Gemini FinishReason values — duplicated locally so the SDK stays a
@@ -87,8 +91,8 @@ export function toCanonicalRequest(
   const messages: CanonicalMessage[] = [];
   let systemPrompt: string | undefined;
   const ids = createIdGenerator();
-  // function name → resolved call id, for matching functionResponses
-  const callIds = new Map<string, string>();
+  // pending call ids per function name, for matching functionResponses
+  const pendingCalls: PendingCallIds = new Map();
 
   // Extract system instruction
   if (request.systemInstruction) {
@@ -98,26 +102,13 @@ export function toCanonicalRequest(
   // Convert contents to messages
   for (const content of request.contents) {
     const parts = content.parts ?? [];
-    const functionResponses = parts.filter(isFunctionResponsePart);
     const otherParts = parts.filter((p) => !isFunctionResponsePart(p));
 
     if (content.role === "model") {
-      const callParts = otherParts.filter(isFunctionCallPart);
-      const toolCalls = callParts.map(
-        (part): CanonicalToolCall => {
-          const call = part.functionCall as GeminiFunctionCall;
-          const id = call.id ?? ids();
-          callIds.set(call.name, id);
-          return {
-            id,
-            type: "function",
-            function: {
-              name: call.name,
-              arguments: JSON.stringify(call.args ?? {}),
-            },
-          };
-        },
-      );
+      const toolCalls = toCanonicalToolCalls(otherParts, ids);
+      for (const call of toolCalls) {
+        recordCallId(pendingCalls, call.function.name, call.id);
+      }
       messages.push({
         role: "assistant",
         content: extractContentParts({
@@ -127,20 +118,7 @@ export function toCanonicalRequest(
         ...(toolCalls.length > 0 && { toolCalls }),
       });
     } else {
-      for (const part of functionResponses) {
-        const res = part.functionResponse as GeminiFunctionResponse;
-        const toolCallId = res.id ?? callIds.get(res.name);
-        if (!toolCallId) {
-          throw new ValidationError(
-            `Function response "${res.name}" has no matching function call in this request`,
-          );
-        }
-        messages.push({
-          role: "tool",
-          toolCallId,
-          content: functionResponseContent(res),
-        });
-      }
+      messages.push(...toCanonicalToolMessages(parts, pendingCalls));
       if (otherParts.length > 0) {
         messages.push({
           role: "user",
@@ -160,63 +138,17 @@ export function toCanonicalRequest(
   };
 
   // Convert tool definitions
-  const declarations =
-    request.tools?.flatMap((tool) =>
-      "functionDeclarations" in tool && tool.functionDeclarations
-        ? tool.functionDeclarations
-        : [],
-    ) ?? [];
-  if (declarations.length > 0) {
-    result.tools = declarations.map((decl) => ({
-      type: "function" as const,
-      function: {
-        name: decl.name,
-        ...(decl.description !== undefined && {
-          description: decl.description,
-        }),
-        ...(decl.parameters !== undefined && {
-          parameters: decl.parameters as unknown as Record<
-            string,
-            unknown
-          >,
-        }),
-      },
-    }));
+  const tools = toCanonicalTools(request.tools);
+  if (tools) {
+    result.tools = tools;
   }
 
   // Convert tool config
-  const fcc = (request.toolConfig as GeminiToolConfig | undefined)
-    ?.functionCallingConfig;
-  if (fcc?.mode !== undefined) {
-    switch (fcc.mode) {
-      case "AUTO":
-      case "MODE_UNSPECIFIED":
-        result.toolChoice = "auto";
-        break;
-      case "NONE":
-        result.toolChoice = "none";
-        break;
-      case "ANY": {
-        const names = fcc.allowedFunctionNames ?? [];
-        if (names.length === 0) {
-          result.toolChoice = "required";
-        } else if (names.length === 1) {
-          result.toolChoice = {
-            type: "function",
-            function: { name: names[0] },
-          };
-        } else {
-          throw new ValidationError(
-            "Gemini functionCallingConfig with multiple allowedFunctionNames has no canonical equivalent",
-          );
-        }
-        break;
-      }
-      default:
-        throw new ValidationError(
-          `Gemini functionCallingConfig mode "${fcc.mode}" is not supported`,
-        );
-    }
+  const toolChoice = toCanonicalToolChoice(
+    request.toolConfig as GeminiToolConfig | undefined,
+  );
+  if (toolChoice !== undefined) {
+    result.toolChoice = toolChoice;
   }
 
   // Convert generation config
@@ -328,21 +260,10 @@ export function fromCanonicalRequest(
           `Tool result "${m.toolCallId ?? ""}" has no matching assistant tool call`,
         );
       }
-      const part: Part = {
-        functionResponse: {
-          name,
-          response: toolResultResponse(m.content),
-        },
-      };
-      const last = contents[contents.length - 1];
-      if (
-        last?.role === "user" &&
-        last.parts.every(isFunctionResponsePart)
-      ) {
-        last.parts.push(part);
-      } else {
-        contents.push({ role: "user", parts: [part] });
-      }
+      appendFunctionResponsePart(
+        contents,
+        functionResponsePart(name, m.content),
+      );
     } else {
       contents.push({
         role: mapRoleToGemini(m.role),
@@ -357,31 +278,15 @@ export function fromCanonicalRequest(
 
   // Tool definitions; parameters filtered to Google's documented
   // schema subset (spec §3.4)
-  if (request.tools?.length) {
-    result.tools = [
-      {
-        functionDeclarations: request.tools.map((tool) => ({
-          name: tool.function.name,
-          ...(tool.function.description !== undefined && {
-            description: tool.function.description,
-          }),
-          ...(tool.function.parameters !== undefined && {
-            parameters: toGeminiSchema(
-              tool.function.parameters,
-            ) as unknown as FunctionDeclaration["parameters"],
-          }),
-        })),
-      },
-    ];
+  const tools = toGeminiTools(request.tools);
+  if (tools) {
+    result.tools = tools;
   }
 
   // Tool choice → functionCallingConfig
-  if (request.toolChoice !== undefined) {
-    result.toolConfig = {
-      functionCallingConfig: toFunctionCallingConfig(
-        request.toolChoice,
-      ) as ToolConfig["functionCallingConfig"],
-    };
+  const toolConfig = toGeminiToolConfig(request.toolChoice);
+  if (toolConfig) {
+    result.toolConfig = toolConfig;
   }
 
   // Add system instruction
@@ -456,19 +361,7 @@ export function toCanonicalResponse(
     .filter((p): p is { text: string } => "text" in p)
     .map((p) => p.text)
     .join("");
-  const toolCalls = parts
-    .filter(isFunctionCallPart)
-    .map((part): CanonicalToolCall => {
-      const call = part.functionCall as GeminiFunctionCall;
-      return {
-        id: call.id ?? ids(),
-        type: "function",
-        function: {
-          name: call.name,
-          arguments: JSON.stringify(call.args ?? {}),
-        },
-      };
-    });
+  const toolCalls = toCanonicalToolCalls(parts, ids);
 
   return {
     id: `gemini-${randomUUID()}`,
@@ -603,82 +496,6 @@ export function mapToGeminiFinishReason(
     default:
       return FinishReason.STOP;
   }
-}
-
-// ============ TOOLS (spec §3.4) ============
-
-function isFunctionCallPart(part: Part): part is FunctionCallPart {
-  return "functionCall" in part && part.functionCall != null;
-}
-
-function isFunctionResponsePart(
-  part: Part,
-): part is FunctionResponsePart {
-  return "functionResponse" in part && part.functionResponse != null;
-}
-
-/** Canonical tool call → Gemini functionCall part (id dropped on the wire). */
-function functionCallPart(call: CanonicalToolCall): Part {
-  const parsed = parseToolArguments(call.function.arguments);
-  if (!parsed.valid) {
-    logger.warn(
-      "Tool call arguments are not valid JSON; sending _invalid_arguments wrapper",
-    );
-  }
-  return {
-    functionCall: { name: call.function.name, args: parsed.args },
-  };
-}
-
-/** Canonical tool-result content → Gemini functionResponse.response object. */
-function toolResultResponse(
-  content: CanonicalMessage["content"],
-): Record<string, unknown> {
-  const text =
-    typeof content === "string"
-      ? content
-      : content
-          .filter((p) => p.type === "text")
-          .map((p) => p.text ?? "")
-          .join("");
-  const parsed = parseToolArguments(text);
-  if (parsed.valid && text.trim() !== "") {
-    return parsed.args;
-  }
-  return { content: text };
-}
-
-/** Gemini functionResponse → canonical tool-message content string. */
-function functionResponseContent(res: GeminiFunctionResponse): string {
-  const response = res.response;
-  if (
-    response !== null &&
-    typeof response === "object" &&
-    !Array.isArray(response)
-  ) {
-    const keys = Object.keys(response);
-    // Unwrap the { "content": "<string>" } wrapper this adapter emits
-    if (
-      keys.length === 1 &&
-      typeof response.content === "string"
-    ) {
-      return response.content;
-    }
-    return JSON.stringify(response);
-  }
-  return JSON.stringify(response ?? {});
-}
-
-function toFunctionCallingConfig(
-  choice: CanonicalToolChoice,
-): GeminiToolConfig["functionCallingConfig"] {
-  if (choice === "auto") return { mode: "AUTO" };
-  if (choice === "none") return { mode: "NONE" };
-  if (choice === "required") return { mode: "ANY" };
-  return {
-    mode: "ANY",
-    allowedFunctionNames: [choice.function.name],
-  };
 }
 
 // ============ ERRORS ============

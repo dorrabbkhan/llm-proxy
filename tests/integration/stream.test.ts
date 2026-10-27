@@ -62,6 +62,7 @@ afterEach(() => {
   resetStreamCase();
   delete process.env.UPSTREAM_RETRIES;
   delete process.env.UPSTREAM_STREAM_IDLE_MS;
+  delete process.env.UPSTREAM_TIMEOUT_MS;
 });
 
 afterAll(() => {
@@ -247,5 +248,165 @@ describe("streaming (spec §3.2)", () => {
     expect(body).toContain('data: {"error"');
     expect(body).toContain('"code":"timeout"');
     expect(body.trimEnd().endsWith("data: [DONE]")).toBe(true);
+  });
+
+  it("stream longer than UPSTREAM_TIMEOUT_MS completes", async () => {
+    // UPSTREAM_TIMEOUT_MS covers connect + headers only (spec §3.2); a
+    // healthy stream may run far longer.
+    process.env.UPSTREAM_TIMEOUT_MS = "100";
+    resetConfig();
+
+    const sse = readFileSync(
+      join(__dirname, "..", "fixtures", "streams", "openai", "text.sse"),
+    );
+    const split = sse.indexOf("\n\n") + 2;
+    server.use(
+      http.post(
+        `${MOCK_BASE_URLS.openai}/v1/chat/completions`,
+        () =>
+          new HttpResponse(
+            new ReadableStream<Uint8Array>({
+              async start(controller) {
+                controller.enqueue(sse.subarray(0, split));
+                await new Promise((r) => setTimeout(r, 300));
+                controller.enqueue(sse.subarray(split));
+                controller.close();
+              },
+            }),
+            { headers: { "content-type": "text/event-stream" } },
+          ),
+      ),
+    );
+
+    const res = await postStream("/v1/chat/completions", STREAM_BODY);
+
+    expect(res.status).toBe(200);
+    const body = res.body as string;
+    expect(body).not.toContain('data: {"error"');
+    expect(body.trimEnd().endsWith("data: [DONE]")).toBe(true);
+  });
+
+  it("upstream stalls after [DONE] → stream ends at [DONE], no error", async () => {
+    // message_end is terminal: the pipe must end there even when the
+    // upstream keeps the body open — not wait for the idle timeout and
+    // emit an error after it.
+    process.env.UPSTREAM_STREAM_IDLE_MS = "50";
+    resetConfig();
+
+    let upstreamAborted = false;
+    const aborted = new Promise<void>((resolve) => {
+      server.use(
+        http.post(
+          `${MOCK_BASE_URLS.openai}/v1/chat/completions`,
+          ({ request }) => {
+            request.signal.addEventListener("abort", () => {
+              upstreamAborted = true;
+              resolve();
+            });
+            const sse = readFileSync(
+              join(
+                __dirname,
+                "..",
+                "fixtures",
+                "streams",
+                "openai",
+                "text.sse",
+              ),
+            );
+            return new HttpResponse(
+              new ReadableStream<Uint8Array>({
+                start(controller) {
+                  controller.enqueue(sse);
+                  // stalls — the fixture's [DONE] must end the stream
+                },
+                cancel() {
+                  upstreamAborted = true;
+                  resolve();
+                },
+              }),
+              { headers: { "content-type": "text/event-stream" } },
+            );
+          },
+        ),
+      );
+    });
+
+    const res = await postStream("/v1/chat/completions", STREAM_BODY);
+
+    expect(res.status).toBe(200);
+    const body = res.body as string;
+    expect(body).not.toContain('data: {"error"');
+    expect(body.split("data: [DONE]").length - 1).toBe(1);
+    await Promise.race([
+      aborted,
+      new Promise((r) => setTimeout(r, 2000)),
+    ]);
+    expect(upstreamAborted).toBe(true);
+  });
+
+  it("stream request upstream 429 → JSON error in source dialect with Retry-After", async () => {
+    server.use(
+      http.post(`${MOCK_BASE_URLS.openai}/v1/chat/completions`, () =>
+        HttpResponse.json(
+          {
+            error: {
+              message: "upstream says no",
+              type: "invalid_request_error",
+              param: null,
+              code: "test_code",
+            },
+          },
+          { status: 429, headers: { "Retry-After": "7" } },
+        ),
+      ),
+    );
+
+    const res = await request(app)
+      .post("/v1/chat/completions")
+      .send(STREAM_BODY);
+
+    expect(res.status, JSON.stringify(res.body)).toBe(429);
+    expect(res.headers["content-type"]).not.toContain("text/event-stream");
+    expect(res.body).toEqual(
+      adapters.openai.fromCanonicalError(
+        makeCanonicalError("rate_limit", "upstream says no"),
+      ),
+    );
+    expect(res.headers["retry-after"]).toBe("7");
+  });
+
+  it("stream request upstream 401 → JSON error in source dialect", async () => {
+    server.use(
+      http.post(`${MOCK_BASE_URLS.openai}/v1/chat/completions`, () =>
+        HttpResponse.json(
+          {
+            error: {
+              message: "upstream says no",
+              type: "invalid_request_error",
+              param: null,
+              code: "test_code",
+            },
+          },
+          { status: 401 },
+        ),
+      ),
+    );
+
+    const res = await request(app)
+      .post("/v1/chat/completions")
+      .send(STREAM_BODY);
+
+    // The upstream rejected the proxy's key — 502 "upstream", and the
+    // upstream's own message never reaches the client (D1).
+    expect(res.status, JSON.stringify(res.body)).toBe(502);
+    expect(res.headers["content-type"]).not.toContain("text/event-stream");
+    expect(res.body).toEqual(
+      adapters.openai.fromCanonicalError(
+        makeCanonicalError(
+          "upstream",
+          "Upstream openai rejected the proxy's credentials (401)",
+        ),
+      ),
+    );
   });
 });

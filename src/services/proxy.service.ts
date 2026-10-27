@@ -304,6 +304,10 @@ async function proxyChatStream(
     "Forwarding request to upstream",
   );
 
+  // Client disconnect aborts the upstream request; upstreamAc lets the
+  // pipeline's end (terminal event, failure) tear it down too — a bare
+  // body cancel doesn't reach the request on every transport.
+  const upstreamAc = new AbortController();
   const upstream = await postStream({
     url,
     headers: buildAuthHeaders(targetApi, config.targetApiKey),
@@ -311,7 +315,9 @@ async function proxyChatStream(
     timeoutMs: config.upstreamTimeoutMs,
     retries: config.upstreamRetries,
     requestId,
-    signal: opts?.signal,
+    signal: opts?.signal
+      ? AbortSignal.any([opts.signal, upstreamAc.signal])
+      : upstreamAc.signal,
   }).catch((err) => {
     throw err instanceof UpstreamError
       ? toClientFacing(err, targetApi)
@@ -338,13 +344,19 @@ async function proxyChatStream(
   const signal = opts?.signal ?? new AbortController().signal;
 
   const chunks = (async function* (): AsyncGenerator<string> {
-    yield* runStreamPipeline({
-      upstream: upstream.body,
-      decoder: recordingDecoder,
-      encoder,
-      idleMs: config.upstreamStreamIdleMs,
-      signal,
-    });
+    try {
+      yield* runStreamPipeline({
+        upstream: upstream.body,
+        decoder: recordingDecoder,
+        encoder,
+        idleMs: config.upstreamStreamIdleMs,
+        signal,
+      });
+    } finally {
+      // Whatever ended the pipe — terminal event, in-stream error,
+      // client disconnect — the upstream request is done with.
+      upstreamAc.abort();
+    }
     const last = observed.at(-1);
     if (last?.type === "message_end") {
       const usageEvent = observed.find((e) => e.type === "usage");

@@ -26,8 +26,11 @@ export interface StreamPipelineOptions {
  * Termination rules: an upstream read error, undecodable data or an idle
  * gap longer than `idleMs` ends the stream with the source dialect's
  * in-stream error form (kind `timeout` for idle, `upstream` otherwise) —
- * the client never sees a truncated message followed by silence. Aborting
- * `signal` cancels the upstream read and ends the pipe quietly.
+ * the client never sees a truncated message followed by silence. An
+ * encoded `message_end` or `error` event is terminal: the encoder's tail
+ * is written, the upstream read is cancelled and the pipe ends, even
+ * when the upstream keeps its body open. Aborting `signal` cancels the
+ * upstream read and ends the pipe quietly.
  */
 export async function* runStreamPipeline(
   opts: StreamPipelineOptions,
@@ -51,11 +54,17 @@ export async function* runStreamPipeline(
     if (tail !== "") yield tail;
   }
 
+  /** Yields encoded bytes; returns true at the first terminal event
+   * (message_end or error — nothing may be encoded after it). */
   function* encodeAll(events: CanonicalStreamEvent[]) {
     for (const event of events) {
       const encoded = encoder.encode(event);
       if (encoded !== "") yield encoded;
+      if (event.type === "message_end" || event.type === "error") {
+        return true;
+      }
     }
+    return false;
   }
 
   try {
@@ -117,7 +126,14 @@ export async function* runStreamPipeline(
         yield* fail("upstream", "Upstream sent undecodable stream data");
         return;
       }
-      yield* encodeAll(events);
+      if (yield* encodeAll(events)) {
+        // Terminal event: end now even if the upstream keeps the body
+        // open — nothing may follow message_end or error.
+        const tail = encoder.end();
+        if (tail !== "") yield tail;
+        cancel();
+        return;
+      }
     }
   } finally {
     signal.removeEventListener("abort", cancel);

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { postJson } from './http-client';
+import { postJson, postStream } from './http-client';
 import { UpstreamError } from '../utils/errors';
 
 const OPTS = {
@@ -252,5 +252,76 @@ describe('postJson', () => {
     expect(err.message).toBe('Upstream rejected request after 2 attempts');
     expect(err.upstreamStatus).toBe(429);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('postStream', () => {
+  function streamResponse(): Response {
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('data: x\n\n'));
+        },
+      }),
+      { status: 200, headers: { 'Content-Type': 'text/event-stream' } }
+    );
+  }
+
+  it('timeoutMs covers connect + headers only — the signal passed to fetch is not armed once headers arrive', async () => {
+    let captured: AbortSignal | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        captured = init.signal as AbortSignal;
+        return streamResponse();
+      })
+    );
+
+    await postStream({ ...OPTS, timeoutMs: 50, retries: 0 });
+
+    expect(captured?.aborted).toBe(false);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(captured?.aborted).toBe(false);
+  });
+
+  it('still times out when headers never arrive', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            (init.signal as AbortSignal).addEventListener('abort', () =>
+              reject(
+                new DOMException('The operation timed out', 'TimeoutError')
+              )
+            );
+          })
+      )
+    );
+
+    const err = await postStream({ ...OPTS, timeoutMs: 30, retries: 0 }).catch(
+      (e) => e
+    );
+
+    expect(err).toBeInstanceOf(UpstreamError);
+    expect(err.statusCode).toBe(504);
+  });
+
+  it("the caller's signal still aborts the body after headers", async () => {
+    let captured: AbortSignal | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        captured = init.signal as AbortSignal;
+        return streamResponse();
+      })
+    );
+
+    const ac = new AbortController();
+    await postStream({ ...OPTS, timeoutMs: 30_000, retries: 0, signal: ac.signal });
+    expect(captured?.aborted).toBe(false);
+
+    ac.abort();
+    expect(captured?.aborted).toBe(true);
   });
 });

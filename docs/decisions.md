@@ -596,6 +596,13 @@ One line each; details in the task entries above. Task PRs: 1→#1, 2→#2,
   (Step 1 names the replacement — the openai→openai `stream:true` 501 case is
   now covered by `stream.test.ts`; kept listed here because the Files block's
   Modify list omits it).
+- Fix round 1 added `src/services/stream-pipeline.test.ts` (new — the
+  prescribed unit test pinning "nothing is encoded after a terminal event";
+  the Files block has no pipeline test file) and modified
+  `src/services/http-client.test.ts` (postStream unit tests: the msw layer
+  can't observe an undici body abort, so the headers-only timeout is pinned
+  by stubbing `fetch` and asserting the signal stays un-aborted once headers
+  resolve). Both are test files for code inside the block.
 - The OpenAI decoder parses `data:` lines individually rather than via strict
   SSE block dispatch: the recorded `tool_call.sse` fixture (openai-go stream
   capture) carries bare `data:` lines with no blank-line separators, and every

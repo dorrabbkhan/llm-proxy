@@ -48,10 +48,15 @@ proxyRouter.use(async (req, res, next) => {
       res.setHeader("X-Accel-Buffering", "no");
       res.flushHeaders();
 
+      // One close promise for the whole loop — racing a fresh
+      // `once(res, "close")` per backpressured write leaks listeners.
+      const closed = new Promise<void>((resolve) => {
+        res.once("close", resolve);
+      });
       for await (const chunk of result.stream.chunks) {
         if (res.writableEnded || res.destroyed) break;
         if (!res.write(chunk)) {
-          await Promise.race([once(res, "drain"), once(res, "close")]);
+          await Promise.race([once(res, "drain"), closed]);
         }
       }
       completed = true;
@@ -63,6 +68,12 @@ proxyRouter.use(async (req, res, next) => {
   } catch (err) {
     // The client went away mid-request — nothing left to answer.
     if (ac.signal.aborted) return;
+    // Headers already went out: a JSON error can't be rendered onto a
+    // streaming response — end it rather than calling next(err).
+    if (res.headersSent) {
+      res.destroy();
+      return;
+    }
     next(
       err instanceof ProxyError
         ? err

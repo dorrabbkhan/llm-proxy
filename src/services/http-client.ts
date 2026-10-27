@@ -235,6 +235,16 @@ export async function postStream(
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const start = Date.now();
     try {
+      // timeoutMs bounds connect + response headers only (spec §3.2):
+      // a header-phase AbortController whose timer is cleared the
+      // moment fetch resolves, so nothing bounds the body except the
+      // pipeline's idle timeout. The caller's signal stays armed — it
+      // is what aborts the body on client disconnect.
+      const headerPhase = new AbortController();
+      const headerTimer = setTimeout(
+        () => headerPhase.abort(),
+        timeoutMs,
+      );
       const res = await fetch(url, {
         method: "POST",
         headers: {
@@ -244,9 +254,9 @@ export async function postStream(
         },
         body: JSON.stringify(body),
         signal: signal
-          ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
-          : AbortSignal.timeout(timeoutMs),
-      });
+          ? AbortSignal.any([signal, headerPhase.signal])
+          : headerPhase.signal,
+      }).finally(() => clearTimeout(headerTimer));
 
       const durationMs = Date.now() - start;
       const retryAfterSeconds = parseRetryAfter(

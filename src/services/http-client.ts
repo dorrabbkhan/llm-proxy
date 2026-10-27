@@ -134,8 +134,9 @@ export async function requestJson(
           {
             requestId,
             url,
-            // error-handler logs err.context in every environment, so the
-            // body preview (completion text for NDJSON) is dev-only
+            // the error-handler never logs err.context; the body preview
+            // (completion text for NDJSON) surfaces only in
+            // non-production response details
             ...(process.env.NODE_ENV !== "production"
               ? { bodyPreview: text.slice(0, 200) }
               : {}),

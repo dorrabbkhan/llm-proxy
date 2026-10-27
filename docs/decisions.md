@@ -179,4 +179,6 @@ One entry per decision or per task that deviated from the plan or spec. Newest a
   arguments with a circular-safe stringify — pino's own serialization decides nothing here beyond
   the argument object, and the pretty transport runs in a worker thread whose fd writes cannot be
   intercepted in-process.
-- Files outside the Files block: none.
+- Files outside the Files block: `src/middleware/request-logger.ts` (+ test) — pre-existing leak
+  since v1.0: pino-http's default serializers logged client credential headers and `?key=` URLs;
+  fixed here per owner decision 2026-10-27 (PR #4, option a).

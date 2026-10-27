@@ -33,7 +33,7 @@ The matching spec is read from the plan's `**Spec:**` line, not hard-coded.
    9a. If the task changes behaviour a client can see (wire format, errors, streaming, routes), exercise it once with a real HTTP request against `npm run dev` and an msw- or local-Ollama-backed upstream, and paste the request and response (keys redacted) into the PR description.
    9b. Compare `git diff --name-only main` with the task's Files block. For every file outside it, add a "Files outside the Files block" line to this task's entry in docs/decisions.md, saying why each was needed. Include it in the same commit.
 10. Commit with the message the task specifies, push the branch, and open a PR with `gh pr create` — the PR body is the final summary headings below.
-11. Start `scripts/llm-proxy-loop.sh watch` so the check watch runs in the background, then run the `/llm-proxy-review` pass immediately — review overlaps CI, it does not wait for it. Block on `scripts/llm-proxy-loop.sh await` only before writing the final summary. Fix failures by pushing to the same branch.
+11. Start `scripts/llm-proxy-loop.sh watch` so the check watch runs in the background. Do not run `/llm-proxy-review` on your own PR and do not post reviews or comments on it: the conductor starts an independent review in a fresh session. Block on `scripts/llm-proxy-loop.sh await` only before writing the final summary. Fix failures by pushing to the same branch.
 12. Finish by reporting the PR URL and the check results, plus the summary under these headings: Task; Spec sections implemented; Tests added; Ambiguities I resolved (or "None"); Follow-ups noticed.
 
 ## Rules

@@ -3,11 +3,13 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
+import { Ollama } from "ollama";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   openaiAdapter,
   anthropicAdapter,
+  ollamaAdapter,
 } from "../../src/transformers/adapters";
 import { mapToAnthropicStopReason } from "../../src/transformers/adapters/anthropic.adapter";
 import { reassembleStream } from "../../src/utils/stream-reassemble";
@@ -18,6 +20,7 @@ import type {
   TextBlock,
   ToolUseBlock,
 } from "../../src/types/anthropic.types";
+import type { OllamaChatRequest } from "../../src/types/ollama.types";
 
 /**
  * Encoder contract (spec §3.3, §4.2): bytes our encoders write must be
@@ -50,6 +53,12 @@ const openaiCases = readdirSync(join(STREAMS_DIR, "openai"))
 
 // "error" has no message to accumulate — covered by the error-event test.
 const anthropicCases = readdirSync(join(STREAMS_DIR, "anthropic"))
+  .filter((f) => f.endsWith(".json") && !f.endsWith(".nonstreaming.json"))
+  .map((f) => f.slice(0, -".json".length))
+  .filter((name) => name !== "error");
+
+// "error" makes the SDK throw on the {"error":…} line — covered below.
+const ollamaCases = readdirSync(join(STREAMS_DIR, "ollama"))
   .filter((f) => f.endsWith(".json") && !f.endsWith(".nonstreaming.json"))
   .map((f) => f.slice(0, -".json".length))
   .filter((name) => name !== "error");
@@ -102,9 +111,30 @@ const ANTHROPIC_STREAM_PARAMS = {
   messages: [{ role: "user" as const, content: "hi" }],
 };
 
+function encodeOllama(
+  events: CanonicalStreamEvent[],
+  sourceRequest: OllamaChatRequest,
+): string {
+  const encoder = ollamaAdapter.createStreamEncoder({
+    sourceRequest,
+    query: {},
+    requestedModel: "m",
+  });
+  let out = "";
+  for (const event of events) out += encoder.encode(event);
+  return out + encoder.end();
+}
+
+const OLLAMA_STREAMING_REQUEST: OllamaChatRequest = {
+  model: "m",
+  messages: [{ role: "user", content: "hi" }],
+  stream: true,
+};
+
 let currentBody = "";
+let currentContentType = "text/event-stream";
 const server = createServer((_req, res) => {
-  res.writeHead(200, { "content-type": "text/event-stream" });
+  res.writeHead(200, { "content-type": currentContentType });
   res.end(currentBody);
 });
 
@@ -131,6 +161,11 @@ function anthropicClient(): Anthropic {
     baseURL: `http://127.0.0.1:${port}`,
     maxRetries: 0,
   });
+}
+
+function ollamaClient(): Ollama {
+  const port = (server.address() as AddressInfo).port;
+  return new Ollama({ host: `http://127.0.0.1:${port}` });
 }
 
 describe("stream encoders via the provider SDK", () => {
@@ -473,5 +508,171 @@ describe("stream encoders via the provider SDK", () => {
 
     expect(err).toBeInstanceOf(Anthropic.APIError);
     expect((err as Anthropic.APIError).type).toBe(encodedType);
+  });
+
+  it.each(ollamaCases)("ollama SDK parses encoded %s", async (name) => {
+    const fixture = fixtureFor("ollama", name);
+    currentContentType = "application/x-ndjson";
+    currentBody = encodeOllama(
+      fixture.expectedEvents,
+      OLLAMA_STREAMING_REQUEST,
+    );
+
+    const parts = [];
+    const stream = await ollamaClient().chat({
+      model: "m",
+      messages: [{ role: "user", content: "hi" }],
+      stream: true,
+    });
+    for await (const part of stream) parts.push(part);
+
+    const expected = reassembleStream(fixture.expectedEvents);
+    const final = parts.at(-1)!;
+
+    expect(
+      parts.map((p) => p.message?.content ?? "").join(""),
+    ).toBe(expected.message.content);
+    expect(
+      parts
+        .flatMap((p) => p.message?.tool_calls ?? [])
+        .map((tc) => ({
+          name: tc.function.name,
+          arguments: tc.function.arguments,
+        })),
+    ).toEqual(
+      (expected.message.toolCalls ?? []).map((tc) => ({
+        name: tc.function.name,
+        arguments: JSON.parse(tc.function.arguments) as object,
+      })),
+    );
+
+    expect(final.done).toBe(true);
+    // Ollama reports a tool-call answer's done_reason as "stop" (recorded
+    // corpus) — only canonical "length" stays "length".
+    expect(final.done_reason).toBe(
+      expected.finishReason === "length" ? "length" : "stop",
+    );
+    if (expected.usage) {
+      expect(final.prompt_eval_count).toBe(expected.usage.inputTokens);
+      expect(final.eval_count).toBe(expected.usage.outputTokens);
+    }
+  });
+
+  it("ollama SDK throws on the encoded error line", async () => {
+    const fixture = fixtureFor("ollama", "error");
+    currentContentType = "application/x-ndjson";
+    currentBody = encodeOllama(
+      fixture.expectedEvents,
+      OLLAMA_STREAMING_REQUEST,
+    );
+
+    const stream = await ollamaClient().chat({
+      model: "m",
+      messages: [{ role: "user", content: "hi" }],
+      stream: true,
+    });
+    const err: unknown = await (async () => {
+      try {
+        for await (const _part of stream) {
+          // consume the whole stream
+        }
+        return undefined;
+      } catch (e) {
+        return e;
+      }
+    })();
+
+    const errorEvent = fixture.expectedEvents.find(
+      (e) => e.type === "error",
+    );
+    expect(errorEvent?.type).toBe("error");
+    if (errorEvent?.type === "error") {
+      expect((err as Error).message).toBe(errorEvent.error.message);
+    }
+  });
+
+  it("ollama encoder handles interleaved canonical tool indices", () => {
+    // Index 1's delta arrives before index 0's end (§3.1 rule 5) — each
+    // call keeps its own buffer and ID, emitted whole at tool_call_end.
+    const events: CanonicalStreamEvent[] = [
+      { type: "message_start", id: "call_0", model: "m" },
+      { type: "tool_call_start", index: 0, id: "call_a", name: "get_weather" },
+      { type: "tool_call_delta", index: 0, argumentsDelta: '{"city":' },
+      { type: "tool_call_start", index: 1, id: "call_b", name: "get_time" },
+      { type: "tool_call_delta", index: 1, argumentsDelta: '{"tz":"UTC"}' },
+      { type: "tool_call_end", index: 1 },
+      { type: "tool_call_delta", index: 0, argumentsDelta: '"Paris"}' },
+      { type: "tool_call_end", index: 0 },
+      { type: "message_end", finishReason: "tool_call" },
+    ];
+    const out = encodeOllama(events, OLLAMA_STREAMING_REQUEST);
+    const lines = out
+      .split("\n")
+      .filter((l) => l !== "")
+      .map((l) => JSON.parse(l) as Record<string, unknown>);
+
+    const toolLines = lines.filter(
+      (l) => (l.message as { tool_calls?: unknown[] }).tool_calls,
+    );
+    expect(toolLines).toHaveLength(2);
+    // The first call to finish emits first — call_b keeps its own id,
+    // name, arguments and canonical index.
+    expect(toolLines[0]!.message).toMatchObject({
+      role: "assistant",
+      content: "",
+      tool_calls: [
+        {
+          id: "call_b",
+          function: {
+            index: 1,
+            name: "get_time",
+            arguments: { tz: "UTC" },
+          },
+        },
+      ],
+    });
+    expect(toolLines[1]!.message).toMatchObject({
+      tool_calls: [
+        {
+          id: "call_a",
+          function: {
+            index: 0,
+            name: "get_weather",
+            arguments: { city: "Paris" },
+          },
+        },
+      ],
+    });
+  });
+
+  it("ollama encoder writes nothing after a terminal event", () => {
+    const afterEnd = ollamaAdapter.createStreamEncoder({
+      sourceRequest: OLLAMA_STREAMING_REQUEST,
+      query: {},
+      requestedModel: "m",
+    });
+    afterEnd.encode({ type: "message_start", id: "call_0", model: "m" });
+    afterEnd.encode({ type: "message_end", finishReason: "stop" });
+    expect(afterEnd.encode({ type: "text_delta", text: "late" })).toBe("");
+    expect(
+      afterEnd.encode({ type: "message_end", finishReason: "stop" }),
+    ).toBe("");
+    expect(afterEnd.end()).toBe("");
+
+    const afterError = ollamaAdapter.createStreamEncoder({
+      sourceRequest: OLLAMA_STREAMING_REQUEST,
+      query: {},
+      requestedModel: "m",
+    });
+    afterError.encode({
+      type: "error",
+      error: { kind: "upstream", status: 502, message: "boom" },
+    });
+    expect(afterError.encode({ type: "text_delta", text: "late" })).toBe(
+      "",
+    );
+    expect(
+      afterError.encode({ type: "message_end", finishReason: "stop" }),
+    ).toBe("");
   });
 });

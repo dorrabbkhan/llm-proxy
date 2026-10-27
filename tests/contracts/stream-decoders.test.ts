@@ -24,7 +24,7 @@ const WIRE_EXT: Record<Provider, string> = {
 };
 
 // Providers whose createStreamDecoder is implemented.
-const DECODED_PROVIDERS: Provider[] = ["openai", "anthropic"];
+const DECODED_PROVIDERS: Provider[] = ["openai", "anthropic", "ollama"];
 
 const EVERY_SPLIT_MAX_BYTES = 4 * 1024;
 const SAMPLED_SPLIT_POINTS = 150;
@@ -150,6 +150,51 @@ describe("stream decoders", () => {
       new TextEncoder().encode(truncated),
     ]);
     expect(events.at(-1)?.type).toBe("error");
+  });
+
+  it("ollama truncated stream ends with an error event", () => {
+    // Drop the `done: true` line — the socket just closes mid-stream and
+    // the decoder must report an in-stream error, not a silent
+    // half-message (spec §3.2).
+    const text = readFileSync(
+      join(STREAMS_DIR, "ollama", "text.ndjson"),
+      "utf8",
+    );
+    const truncated = text
+      .split("\n")
+      .filter((l) => l !== "" && JSON.parse(l).done !== true)
+      .join("\n");
+
+    const events = decode("ollama", "qwen2.5:0.5b", [
+      new TextEncoder().encode(truncated),
+    ]);
+    expect(events.at(-1)?.type).toBe("error");
+  });
+
+  it("ollama decoder ignores thinking", () => {
+    // Thinking content arrives in `message.thinking`, not
+    // `message.content` (docs.ollama.com/api/chat — think:true models);
+    // it produces no canonical events. Built inline: no fixture carries
+    // it (the corpus model doesn't think).
+    const ndjson = [
+      '{"model":"qwen3:0.6b","created_at":"2026-10-27T00:00:00Z","message":{"role":"assistant","content":"","thinking":"let me think"},"done":false}',
+      '{"model":"qwen3:0.6b","created_at":"2026-10-27T00:00:01Z","message":{"role":"assistant","content":"Hi","thinking":""},"done":false}',
+      '{"model":"qwen3:0.6b","created_at":"2026-10-27T00:00:02Z","message":{"role":"assistant","content":""},"done":true,"done_reason":"stop","prompt_eval_count":10,"eval_count":1}',
+      "",
+    ].join("\n");
+
+    const events = decode("ollama", "qwen3:0.6b", [
+      new TextEncoder().encode(ndjson),
+    ]);
+    expect(events).toEqual([
+      { type: "message_start", id: "call_0", model: "qwen3:0.6b" },
+      { type: "text_delta", text: "Hi" },
+      {
+        type: "usage",
+        usage: { inputTokens: 10, outputTokens: 1, totalTokens: 11 },
+      },
+      { type: "message_end", finishReason: "stop" },
+    ]);
   });
 
   it("anthropic decoder drops thinking deltas", () => {

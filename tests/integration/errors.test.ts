@@ -731,6 +731,7 @@ describe("streaming refusal and unsupported gemini methods (spec §3.2)", () => 
   const STREAMING_ADAPTERS: ReadonlySet<Provider> = new Set([
     "openai",
     "anthropic",
+    "ollama",
   ]);
 
   it.each(

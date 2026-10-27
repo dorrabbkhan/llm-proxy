@@ -7,21 +7,20 @@ import type {
   CanonicalError,
   CanonicalModelList,
   ProviderAdapter,
-  StreamDecoder,
-  StreamEncoder,
-  StreamEncoderContext,
-  IdGenerator,
 } from "../../types/canonical.types";
 import {
   kindFromStatus,
   makeCanonicalError,
 } from "../../utils/canonical-error";
-import { NotSupportedError } from "../../utils/errors";
 import type {
   OllamaChatRequest,
   OllamaChatResponse,
   OllamaMessage,
 } from "../../types/ollama.types";
+import {
+  createStreamDecoder,
+  createStreamEncoder,
+} from "./ollama.stream";
 
 export const ollamaAdapter: ProviderAdapter<
   OllamaChatRequest,
@@ -285,21 +284,4 @@ export function fromCanonicalError(err: CanonicalError): unknown {
   return { error: err.message };
 }
 
-// ============ STREAMING (stub — Task 6) ============
-
-export function createStreamDecoder(
-  _model: string,
-  _ids?: IdGenerator,
-): StreamDecoder {
-  throw new NotSupportedError(
-    'Streaming is not supported yet (planned for v1.1). Send "stream": false.',
-  );
-}
-
-export function createStreamEncoder(
-  _ctx: StreamEncoderContext<OllamaChatRequest>,
-): StreamEncoder {
-  throw new NotSupportedError(
-    'Streaming is not supported yet (planned for v1.1). Send "stream": false.',
-  );
-}
+// Streaming lives in ./ollama.stream — re-exported on the adapter above.

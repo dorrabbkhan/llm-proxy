@@ -164,6 +164,11 @@ describe("proxyRequest", () => {
   });
 
   it("stream:true → NotSupportedError 501, no upstream call", async () => {
+    // gemini target: still stubbed until Task 7 — the streaming refusal
+    // applies before any upstream call.
+    process.env.TARGET_API = "gemini";
+    resetConfig();
+
     const err = await proxyRequest(
       "/v1/chat/completions",
       "POST",
@@ -316,8 +321,11 @@ describe("proxyRequest", () => {
   });
 
   it("pair without stream support still returns 501", async () => {
-    // openai source → ollama target: the ollama decoder is still a stub
-    // until Task 6, so the v1.0.1 refusal applies before any upstream call.
+    // openai source → gemini target: the gemini decoder is still a stub
+    // until Task 7, so the v1.0.1 refusal applies before any upstream call.
+    process.env.TARGET_API = "gemini";
+    resetConfig();
+
     const err = await proxyRequest(
       "/v1/chat/completions",
       "POST",

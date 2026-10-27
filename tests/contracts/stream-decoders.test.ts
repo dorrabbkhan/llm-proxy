@@ -24,7 +24,12 @@ const WIRE_EXT: Record<Provider, string> = {
 };
 
 // Providers whose createStreamDecoder is implemented.
-const DECODED_PROVIDERS: Provider[] = ["openai", "anthropic", "ollama"];
+const DECODED_PROVIDERS: Provider[] = [
+  "openai",
+  "anthropic",
+  "gemini",
+  "ollama",
+];
 
 const EVERY_SPLIT_MAX_BYTES = 4 * 1024;
 const SAMPLED_SPLIT_POINTS = 150;
@@ -169,6 +174,86 @@ describe("stream decoders", () => {
       new TextEncoder().encode(truncated),
     ]);
     expect(events.at(-1)?.type).toBe("error");
+  });
+
+  it("gemini truncated stream ends with an error event", () => {
+    // Drop the last data: frame (the one carrying finishReason) — the
+    // socket just closes mid-stream and the decoder must report an
+    // in-stream error, not a silent half-message (spec §3.2).
+    const text = readFileSync(
+      join(STREAMS_DIR, "gemini", "after_tool_result.sse"),
+      "utf8",
+    );
+    const frames = text.split("\n\n").filter((f) => f.trim() !== "");
+    const truncated = frames.slice(0, -1).join("\n\n") + "\n\n";
+
+    const events = decode("gemini", "gemini-2.5-flash", [
+      new TextEncoder().encode(truncated),
+    ]);
+    expect(events.at(-1)?.type).toBe("error");
+  });
+
+  it("gemini decoder: in-stream error body → error event", () => {
+    // Google reports failures inside the stream as an
+    // {error:{code,message,status}} data frame — mapped through
+    // toCanonicalError like the non-streaming path. Built inline: no
+    // error fixture exists in Google's published captures.
+    const sse =
+      'data: {"error":{"code":429,"message":"Quota exceeded","status":"RESOURCE_EXHAUSTED"}}\n\n';
+
+    const events = decode("gemini", "gemini-2.5-flash", [
+      new TextEncoder().encode(sse),
+    ]);
+    expect(events).toEqual([
+      {
+        type: "error",
+        error: {
+          kind: "rate_limit",
+          status: 429,
+          message: "Quota exceeded",
+        },
+      },
+    ]);
+  });
+
+  it("gemini decoder: non-object JSON payload → error event", () => {
+    // A data: payload that parses as JSON but isn't a plain object
+    // can't carry a GenerateContentResponse — the same upstream error
+    // as an undecodable chunk, and nothing else (no spurious
+    // message_start).
+    for (const payload of ["5", '"hello"', "[1,2,3]", "null", "true"]) {
+      const events = decode("gemini", "gemini-2.5-flash", [
+        new TextEncoder().encode(`data: ${payload}\n\n`),
+      ]);
+      expect(events, `payload ${payload}`).toEqual([
+        {
+          type: "error",
+          error: {
+            kind: "upstream",
+            status: 502,
+            message: "Upstream sent an undecodable stream chunk",
+          },
+        },
+      ]);
+    }
+  });
+
+  it("gemini decoder: non-array candidates/parts → error event", () => {
+    // `candidates` or `content.parts` present but not an array is a
+    // malformed response — the same upstream error, not a throw from
+    // feed().
+    for (const payload of [
+      '{"candidates":{}}',
+      '{"candidates":[{"content":{"parts":{}}}]}',
+    ]) {
+      const events = decode("gemini", "gemini-2.5-flash", [
+        new TextEncoder().encode(`data: ${payload}\n\n`),
+      ]);
+      expect(events.at(-1)?.type, `payload ${payload}`).toBe("error");
+      expect(events.at(-1)).toMatchObject({
+        error: { kind: "upstream", status: 502 },
+      });
+    }
   });
 
   it("ollama decoder ignores thinking", () => {

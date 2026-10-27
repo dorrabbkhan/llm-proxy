@@ -163,44 +163,86 @@ describe("proxyRequest", () => {
     );
   });
 
-  it("stream:true → NotSupportedError 501, no upstream call", async () => {
-    // gemini target: still stubbed until Task 7 — the streaming refusal
-    // applies before any upstream call.
+  it("stream:true streams — gemini target uses :streamGenerateContent?alt=sse", async () => {
+    // All adapters stream since v1.1 Task 7 — the upstream URL is the
+    // Gemini streaming endpoint (streamRequestPath, spec §3.2).
     process.env.TARGET_API = "gemini";
     resetConfig();
+    const sse = readFileSync(
+      "tests/fixtures/streams/gemini/text.sse",
+    ) as Uint8Array;
+    mockPostStream.mockResolvedValue({
+      status: 200,
+      durationMs: 5,
+      body: new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(sse);
+          c.close();
+        },
+      }),
+    });
 
-    const err = await proxyRequest(
+    const result = await proxyRequest(
       "/v1/chat/completions",
       "POST",
       { ...VALID_OPENAI_REQUEST, stream: true },
       "r1",
-    ).catch((e) => e);
+    );
 
-    expect(err).toBeInstanceOf(NotSupportedError);
-    expect(err.statusCode).toBe(501);
-    expect(err.message).toBe(
-      'Streaming is not supported yet (planned for v1.1). Send "stream": false.',
+    expect(mockPostStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: "http://gemini.test/v1beta/models/gpt-4:streamGenerateContent?alt=sse",
+      }),
     );
     expect(mockPostJson).not.toHaveBeenCalled();
+    expect(result).not.toBeNull();
+    expect(result!.stream).toBeDefined();
+
+    let out = "";
+    for await (const chunk of result!.stream!.chunks) out += chunk;
+    expect(out).toContain("data: {");
+    expect(out.trimEnd().endsWith("data: [DONE]")).toBe(true);
   });
 
-  it("gemini :streamGenerateContent → NotSupportedError streaming message", async () => {
+  it("gemini :streamGenerateContent streams (no alt → JSON array)", async () => {
     process.env.SOURCE_API = "gemini";
     resetConfig();
+    const ndjson = readFileSync(
+      "tests/fixtures/streams/ollama/text.ndjson",
+    ) as Uint8Array;
+    mockPostStream.mockResolvedValue({
+      status: 200,
+      durationMs: 5,
+      body: new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(ndjson);
+          c.close();
+        },
+      }),
+    });
 
-    const err = await proxyRequest(
+    const result = await proxyRequest(
       "/v1beta/models/llama3:streamGenerateContent",
       "POST",
       { contents: [{ role: "user", parts: [{ text: "Hello" }] }] },
       "r1",
-    ).catch((e) => e);
+    );
 
-    expect(err).toBeInstanceOf(NotSupportedError);
-    expect(err.statusCode).toBe(501);
-    expect(err.message).toBe(
-      'Streaming is not supported yet (planned for v1.1). Send "stream": false.',
+    expect(mockPostStream).toHaveBeenCalledWith(
+      expect.objectContaining({ url: "http://ollama.test/api/chat" }),
     );
     expect(mockPostJson).not.toHaveBeenCalled();
+    expect(result).not.toBeNull();
+    expect(result!.stream).toBeDefined();
+    expect(result!.stream!.contentType).toBe("application/json");
+
+    let out = "";
+    for await (const chunk of result!.stream!.chunks) out += chunk;
+    const elements = JSON.parse(out) as {
+      candidates?: { finishReason?: string }[];
+    }[];
+    expect(elements.length).toBeGreaterThan(0);
+    expect(elements.at(-1)!.candidates?.[0]?.finishReason).toBe("STOP");
   });
 
   it("gemini :countTokens → NotSupportedError 'countTokens is not supported'", async () => {
@@ -320,23 +362,41 @@ describe("proxyRequest", () => {
     expect(mockPostJson).not.toHaveBeenCalled();
   });
 
-  it("pair without stream support still returns 501", async () => {
-    // openai source → gemini target: the gemini decoder is still a stub
-    // until Task 7, so the v1.0.1 refusal applies before any upstream call.
+  it("every pair streams — no streaming 501 remains", async () => {
+    // The last stubbed adapter (gemini) streams since v1.1 Task 7, so a
+    // stream:true request reaches postStream for every pair.
     process.env.TARGET_API = "gemini";
     resetConfig();
+    const sse = readFileSync(
+      "tests/fixtures/streams/gemini/text.sse",
+    ) as Uint8Array;
+    mockPostStream.mockResolvedValue({
+      status: 200,
+      durationMs: 5,
+      body: new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(sse);
+          c.close();
+        },
+      }),
+    });
 
-    const err = await proxyRequest(
+    const result = await proxyRequest(
       "/v1/chat/completions",
       "POST",
       { ...VALID_OPENAI_REQUEST, stream: true },
       "r1",
-    ).catch((e) => e);
+    );
 
-    expect(err).toBeInstanceOf(NotSupportedError);
-    expect(err.statusCode).toBe(501);
-    expect(mockPostStream).not.toHaveBeenCalled();
+    expect(mockPostStream).toHaveBeenCalledTimes(1);
     expect(mockPostJson).not.toHaveBeenCalled();
+    expect(result).not.toBeNull();
+    expect(result!.stream).toBeDefined();
+    expect(result!.stream!.contentType).toBe("text/event-stream");
+
+    let out = "";
+    for await (const chunk of result!.stream!.chunks) out += chunk;
+    expect(out).toContain("data: {");
   });
 
   it("returns null for chat path with wrong method (GET)", async () => {

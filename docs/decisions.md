@@ -738,3 +738,68 @@ One line each; details in the task entries above. Task PRs: 1→#1, 2→#2,
     `tool_call_delta`/`tool_call_end` for an index that never had
     `tool_call_start` now `logger.warn`s (event type and index only)
     instead of dropping silently; output unchanged.
+
+## v1.1 Task 7: Gemini stream decoder/encoder
+
+- Spec sections implemented: §3.3 Gemini row (SSE `data:` frames of
+  `GenerateContentResponse`; text parts → `text_delta`, `functionCall`
+  parts → start + one `JSON.stringify(args)` delta + end, last
+  `usageMetadata` → `usage` at finish, `finishReason` → `message_end`,
+  `{"error":{code,message,status}}` frame → `error`), §3.4 (arguments
+  buffered per canonical `index` until `tool_call_end`, `args` via
+  `parseToolArguments`).
+- Wire-format source checked 2026-10-27:
+  https://ai.google.dev/api/generate-content#method:-models.streamgeneratecontent
+  and the same page's `GenerateContentResponse`, `Candidate`,
+  `FunctionCall`, `UsageMetadata` and `FinishReason` references —
+  `candidates[].content.parts[].{text,functionCall{name,args,id}}`,
+  `finishReason` values, `usageMetadata.{promptTokenCount,
+  candidatesTokenCount,totalTokenCount}`, `responseId`, `modelVersion`
+  all verified against the docs, not only the fixtures.
+- `message_start.id` = the wire `responseId`, `model` =
+  `modelVersion` (fixture convention). Tool-call ID = `functionCall.id`
+  when present, else the injected `ids` (`call_0`, …). A stream ending
+  in function calls reports `tool_call` even though the wire
+  `finishReason` is `STOP` (as the recorded corpus shows);
+  `MAX_TOKENS` → `length`, `SAFETY`/`RECITATION` → `content_filter`.
+- Decoder shape guards (matching the ollama/anthropic convention): a
+  payload that isn't a plain object, a `candidates`/`content.parts`
+  that isn't an array, or a `functionCall` that isn't an object → one
+  `upstream` error event, never a throw. A stream ending without
+  `finishReason` ends in an `error` event. No `error` fixture exists
+  in Google's published captures (recorded in "v1.1 Task 3"), so the
+  error-frame case is built inline in stream-decoders.test.ts.
+- Encoder: `ctx.query.alt === "sse"` → `data: <response>\r\n\r\n`
+  frames (`text/event-stream` — the CRLF framing the real API uses and
+  the SDK's `^data: (.*)(\n\n|\r\r|\r\n\r\n)` regex accepts); otherwise
+  a streamed JSON array (`[`, `,\r\n` separators, `]`) with content
+  type `application/json` — the `]` still closes after an `error`
+  element so the body stays valid JSON. Elements carry `responseId`
+  (echoed from `message_start`) and `modelVersion` =
+  `ctx.requestedModel`. One candidate element per `text_delta` and per
+  completed `functionCall` — a single `functionCall` part per element,
+  which is what the installed `@google/generative-ai` 0.24.1 SDK's
+  `aggregateResponses` composes correctly (its per-candidate `newPart`
+  accumulator merges multi-part candidates). `functionCall.id` is
+  written back (documented optional field) so `decode(encode(events))`
+  keeps the call IDs.
+- `streamRequestPath` on the Gemini chat route →
+  `/v1beta/models/<m>:streamGenerateContent?alt=sse` — the only
+  provider whose upstream stream endpoint differs from its chat path
+  (spec §3.1; the route field itself landed in Task 4).
+- The v1.0.1 streaming-refusal path is gone: all four adapters stream.
+  The `stream:true`/`:streamGenerateContent` → 501 rows in
+  errors.test.ts and the three refusal cases in
+  proxy.service.test.ts were replaced by streaming assertions (the
+  old → new mapping is listed in the PR). `proxy.service` sets
+  `canonical.stream = true` when the stream branch is entered via
+  `isStreamPath` — a Gemini `:streamGenerateContent` request carries
+  no body flag, and targets that signal streaming in the body
+  (openai `stream_options`, anthropic/ollama `stream:true`) need it.
+  Without this, `gemini source → openai/anthropic target` silently
+  proxied non-streaming upstream bodies through the stream pipeline.
+- Files outside the Files block: `src/services/proxy.service.test.ts`
+  — the two `stream:true → 501` cases PR #18 re-pointed at a gemini
+  target plus the `:streamGenerateContent` refusal case pinned the
+  refusal path this task removes; each was rewritten as a streaming
+  assertion (named in the task instruction as required).

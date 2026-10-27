@@ -527,3 +527,18 @@ One line each; details in the task entries above. Task PRs: 1→#1, 2→#2,
   definitions) and `scripts/stream-fixture-decode.ts` +
   `scripts/stream-fixture-events.ts` (wire bytes → `expectedEvents` /
   `nonStreaming` matching).
+
+## v1.1 Task 3b fix: OLLAMA_MIDSTREAM_KILL is opt-in
+
+- `OLLAMA_MIDSTREAM_KILL` no longer defaults to `docker exec ollama pkill -f
+  llama-server`. `npm run record:streams` never kills a process unless the
+  variable is explicitly set; without it the ollama `error` case is skipped
+  with a log line naming the variable.
+- When set, the command is run once, mid-stream (after the first stream lines
+  arrive), to induce a real in-stream error. `pkill -f llama-server` stops
+  EVERY model runner in the container — set it only against an Ollama
+  instance dedicated to recording.
+- Ollama fixture `source` now names the server version, matching the other
+  recorded fixtures: `recorded: ollama <version>, <model> (via npm run
+  record:streams<; note>)`. The script queries `GET /api/version` for it and
+  skips ollama entirely when the base URL doesn't answer.

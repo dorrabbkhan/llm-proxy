@@ -81,6 +81,8 @@ export interface ProviderRecording {
     extra: Record<string, unknown>,
   ) => Record<string, unknown>;
   sourcePrefix: string;
+  /** Appended after the case's sourceNote (e.g. a closing paren). */
+  sourceSuffix?: string;
   cases: Record<string, RecCase>;
 }
 
@@ -88,9 +90,22 @@ function envOr(name: string, fallback: string): string {
   return process.env[name] || fallback;
 }
 
-function ollamaSetup(streamsDir: string, date: string, killCmd: string) {
+async function ollamaSetup(
+  streamsDir: string,
+  killCmd: string | undefined,
+): Promise<ProviderRecording | string> {
   const baseUrl = envOr("OLLAMA_API_BASE_URL", "http://localhost:11434");
   const model = envOr("RECORD_OLLAMA_MODEL", "qwen2.5:7b");
+  let version = "unknown";
+  try {
+    const res = await fetch(`${baseUrl}/api/version`);
+    if (res.ok) {
+      version =
+        ((await res.json()) as { version?: string }).version ?? version;
+    }
+  } catch {
+    return `not reachable at ${baseUrl}`;
+  }
   return {
     dir: join(streamsDir, "ollama"),
     ext: "ndjson" as const,
@@ -103,7 +118,8 @@ function ollamaSetup(streamsDir: string, date: string, killCmd: string) {
       stream,
       ...extra,
     }),
-    sourcePrefix: `recorded: ollama API, ${model}, ${date}`,
+    sourcePrefix: `recorded: ollama ${version}, ${model} (via npm run record:streams`,
+    sourceSuffix: ")",
     cases: {
       text: {
         request: {
@@ -164,7 +180,7 @@ function ollamaSetup(streamsDir: string, date: string, killCmd: string) {
         midStreamAction: killCmd,
         midStreamAfterLines: 6,
         sourceNote:
-          " (mid-stream error induced by stopping the llama runner mid-generation)",
+          "; mid-stream error induced by stopping the llama runner mid-generation",
       },
     },
   };
@@ -440,10 +456,13 @@ function geminiSetup(streamsDir: string, date: string) {
 export function providerSetups(
   streamsDir: string,
   date: string,
-  ollamaKillCmd: string,
-): Record<Provider, () => ProviderRecording | string> {
+  ollamaKillCmd?: string,
+): Record<
+  Provider,
+  () => ProviderRecording | string | Promise<ProviderRecording | string>
+> {
   return {
-    ollama: () => ollamaSetup(streamsDir, date, ollamaKillCmd),
+    ollama: () => ollamaSetup(streamsDir, ollamaKillCmd),
     openai: () => openaiSetup(streamsDir, date),
     anthropic: () => anthropicSetup(streamsDir, date),
     gemini: () => geminiSetup(streamsDir, date),

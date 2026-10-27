@@ -16,10 +16,16 @@
  *   RECORD_OVERWRITE=1               — allow rewriting files that already
  *                                      exist (default: never overwrite)
  *   RECORD_<PROVIDER>_MODEL          — model override per provider
- *   OLLAMA_MIDSTREAM_KILL            — shell command that kills the running
- *                                      model mid-stream for the ollama
- *                                      "error" case (default: docker exec
- *                                      ollama pkill -f llama-server)
+ *   OLLAMA_MIDSTREAM_KILL            — opt-in shell command run ONCE,
+ *                                      mid-stream, to kill the running model
+ *                                      for the ollama "error" case (e.g.
+ *                                      `docker exec ollama pkill -f
+ *                                      llama-server`). No default: unset →
+ *                                      the error case is skipped and nothing
+ *                                      is killed. `pkill -f llama-server`
+ *                                      stops EVERY model runner in the
+ *                                      container — use it only on an Ollama
+ *                                      instance dedicated to recording.
  *
  * Writes raw wire bytes to tests/fixtures/streams/<provider>/<case>.sse
  * (or .ndjson), the non-streamed twin to <case>.nonstreaming.json, and the
@@ -45,9 +51,7 @@ const DATE = new Date().toISOString().slice(0, 10);
 const RECORD_PROVIDERS = csv(process.env.RECORD_PROVIDERS);
 const RECORD_CASES = csv(process.env.RECORD_CASES);
 const OVERWRITE = process.env.RECORD_OVERWRITE === "1";
-const OLLAMA_MIDSTREAM_KILL =
-  process.env.OLLAMA_MIDSTREAM_KILL ??
-  "docker exec ollama pkill -f llama-server";
+const OLLAMA_MIDSTREAM_KILL = process.env.OLLAMA_MIDSTREAM_KILL;
 
 function csv(v: string | undefined): string[] | null {
   if (!v) return null;
@@ -111,6 +115,13 @@ async function recordProvider(
       console.log(`  ${name}: exists on disk — skipped`);
       continue;
     }
+    if (c.midStreamAfterLines && !c.midStreamAction) {
+      console.log(
+        `  ${name}: skipped — needs OLLAMA_MIDSTREAM_KILL ` +
+          `(mid-stream kill command; nothing was killed)`,
+      );
+      continue;
+    }
     const midStream =
       c.midStreamAction && c.midStreamAfterLines
         ? { afterLines: c.midStreamAfterLines, action: c.midStreamAction }
@@ -127,13 +138,15 @@ async function recordProvider(
       console.log(`  ${name}: HTTP ${res.status} before stream — skipped`);
       continue;
     }
+    const source =
+      rec.sourcePrefix + (c.sourceNote ?? "") + (rec.sourceSuffix ?? "");
     let fixture;
     try {
       fixture = buildFixtureJson(
         provider,
         res.text,
         rec.model,
-        rec.sourcePrefix + (c.sourceNote ?? ""),
+        source,
         DATE,
         undefined,
       );
@@ -173,7 +186,7 @@ async function recordProvider(
           provider,
           res.text,
           rec.model,
-          rec.sourcePrefix + (c.sourceNote ?? ""),
+          source,
           DATE,
           JSON.parse(twin.text),
         );
@@ -206,7 +219,7 @@ async function main(): Promise<void> {
     "gemini",
   ] as Provider[]) {
     if (RECORD_PROVIDERS && !RECORD_PROVIDERS.includes(provider)) continue;
-    const rec = setups[provider]();
+    const rec = await setups[provider]();
     if (typeof rec === "string") {
       console.log(`${provider}: skipped (${rec})`);
       continue;

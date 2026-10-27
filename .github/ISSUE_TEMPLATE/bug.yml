@@ -1,0 +1,54 @@
+name: Bug report
+description: Something in llm-proxy isn't working as documented
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: llm-proxy version
+      description: From package.json, or the image tag / commit you deployed.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: source
+    attributes:
+      label: Source API (client format)
+      description: The API dialect the client speaks (`SOURCE_API`).
+      options: [openai, anthropic, gemini, ollama]
+    validations:
+      required: true
+  - type: dropdown
+    id: target
+    attributes:
+      label: Target API (upstream)
+      description: The upstream provider the proxy forwards to (`TARGET_API`).
+      options: [openai, anthropic, gemini, ollama]
+    validations:
+      required: true
+  - type: textarea
+    id: request
+    attributes:
+      label: Request shape
+      description: >-
+        The request that triggers the bug — method, path and a minimal JSON
+        body. REMOVE all API keys, tokens and real prompt/completion text.
+      placeholder: "POST /v1/chat/completions\n{\"model\": \"...\", \"messages\": [{\"role\": \"user\", \"content\": \"<REDACTED>\"}]}"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: What should have happened (status code, body shape).
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: >-
+        What happened instead — status code and response body. Redact keys
+        and prompt/completion text.
+    validations:
+      required: true

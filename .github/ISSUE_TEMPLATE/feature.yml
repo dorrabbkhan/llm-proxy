@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest an improvement that isn't a new provider
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do that llm-proxy doesn't support today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: What you'd like it to do — endpoint, flag, config, output.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you've tried, or reasons the proposal has to look this way.
+    validations:
+      required: false

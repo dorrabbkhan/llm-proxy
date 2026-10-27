@@ -1,9 +1,10 @@
 # llm-proxy roadmap
 
-**Status:** v1.0 released (chat + model-list translation across OpenAI, Gemini, Ollama and Anthropic,
-client auth, timeouts/retries, Docker, 315 tests). **Next: v1.0.1** (correctness patch and public-repo
-hygiene), then **v1.1** (streaming, tools, Claude Code on anything — public launch). Last revised
-2026-10-26. Reasoning behind this roadmap: `docs/superpowers/specs/2026-10-26-llm-proxy-roadmap-design.md`.
+**Status:** v1.0.1 released (correctness patch on v1.0's chat + model-list translation across OpenAI,
+Gemini, Ollama and Anthropic: provider-dialect errors, native client auth headers, opt-in live suite,
+CI, Apache-2.0 + CLA; ~700 tests). **Next: v1.1** (streaming, tools, Claude Code on anything — public
+launch). Last revised 2026-10-27. Reasoning behind this roadmap:
+`docs/superpowers/specs/2026-10-26-llm-proxy-roadmap-design.md`.
 
 **Positioning:** a small, typed, contract-tested gateway that translates **any client format to any
 provider** — not only "OpenAI in". Three experiences must be flawless:

@@ -267,3 +267,86 @@ One entry per decision or per task that deviated from the plan or spec. Newest a
     upstream repository was archived on 2026-03-23.
   - The `cla-signatures` branch was created from main `fc0be60` on the owner's
     request (the action requires the branch to pre-exist).
+
+## v1.0.1 Task 9: README, CHANGELOG, version 1.0.1, roadmap status
+
+- Files outside the Files block: `package-lock.json` was **regenerated**
+  (`npm install --package-lock-only --ignore-scripts`), going beyond the
+  Files block's "version field only" — the lockfile on main was stale
+  against `package.json` (root still `ISC`, provider SDKs under
+  `dependencies`, lingering `@types/uuid`/`yaml` entries, no `engines`).
+  The regeneration only moved `dev` flags, removed those stale entries
+  and synced root license/engines/version — **no resolved version
+  of any package changed** (verified in the diff). `npm ci` afterwards
+  installs cleanly (295 packages).
+- README quick-start verified verbatim 2026-10-27 against a real Ollama
+  (`qwen2.5:0.5b` already pulled): OpenAI-format curl without `stream` →
+  200 `chat.completion`. Run through the host HTTP proxy
+  (`NODE_USE_ENV_PROXY=1`, `no_proxy` cleared) because the agent sandbox
+  cannot reach host localhost directly — same constraint as Tasks 1–2,
+  no code or doc changes for it; request/response pasted in the PR.
+- README claims checked against the code, not copied from the plan: the
+  error mapping table comes from `src/services/upstream-errors.ts`, the
+  four auth styles from `src/middleware/require-api-key.ts`, the live
+  env vars from `tests/live/live.helpers.ts`, and the test count is now
+  "~700" (709 on main) — the roadmap status line's "315 tests" was
+  updated inside that line as part of the v1.0.1 status change.
+- CHANGELOG `[1.0.1]` links to the releases/tag URL
+  (`.../releases/tag/v1.0.1`) — no prior tag exists to compare from; the
+  owner creates the tag after merge and adjusts the `2026-10-27` header
+  date if the merge is later.
+- Owner decision (2026-10-27, PR #5) applied to docs: an Ollama-format
+  request that omits `stream` is answered non-streaming — stated in
+  README's Known limitations and CHANGELOG's Changed, with "send
+  `"stream": false` explicitly" and the 501-until-v1.1 note.
+- Fix round 1 (PR #10 review): `CONTRIBUTING.md` edited to remove the
+  stale "still in owner review" CLA wording — outside this task's Files
+  block, recorded here.
+
+## v1.0.1 summary — deviations recorded across the version
+
+One line each; details in the task entries above. Task PRs: 1→#1, 2→#2,
+3→#3, 4→#4, 5→#5, 6→#6, follow-up→#7, 7→#8, 8→#9, 9→this PR.
+
+- Task 1 (PR #1): chose cheap default live models for opt-in paid targets
+  (`gpt-4o-mini`, `gemini-2.0-flash`, `claude-3-5-haiku-latest`), OpenAI
+  live `max_tokens: 16`, `useTarget` keeps a pre-set `<TARGET>_API_BASE_URL`.
+- Task 2 (PR #2): files outside the Files block (`adapters/index.test.ts`,
+  `chat.live.test.ts` Ollama `max_tokens: 512`); Ollama adapter maps
+  `stream: false` → absent for contract idempotency; `http-client`
+  rethrows its own `UpstreamError`s; `bodyPreview` kept non-production
+  only (left for the owner, resolved in Task 4).
+- Task 3 (PR #3): kind→provider-type picks where §3.3 didn't name the kind
+  (OpenAI `invalid_request_error`/`api_error`/`service_unavailable_error`,
+  Gemini `INTERNAL`); owner-approved changes: Anthropic `timeout_error`,
+  Gemini `API_KEY_INVALID` → `authentication`, spec §3.3 table edited in
+  the same commit; `openai.adapter.ts` already over ~400 lines.
+- Task 4 (PR #4): `upstreamBody` removed from `err.context`;
+  `bodyPreview` deliberately stays in `err.context` outside production
+  and is surfaced in non-production `details`, but is never logged
+  (owner decision, PR #2); `toClientError` keys on the parsed kind, not raw status; all
+  upstream 5xx except 503/529 → 502; `Retry-After` passes through on any
+  status; `resolveSource` never throws; unhandled-error log whitelists
+  fields; `request-logger` credential redaction (outside the Files block).
+- Task 5 (PR #5): `isSupportedPath` returns true for unparseable paths;
+  Anthropic adapter gained `stream === true` passthrough. Files outside
+  the Files block: `src/transformers/adapters/anthropic.adapter.ts` plus
+  three modified test files (`anthropic.adapter.test.ts`,
+  `src/utils/errors.test.ts`, `src/transformers/adapters/index.test.ts`).
+- Task 6 (PR #6): no deviations recorded.
+- Follow-up (PR #7): live default Ollama model `qwen3:0.6b` →
+  `qwen2.5:0.5b` per owner decision (thinking flake); spec and plan
+  updated to match; Ollama `thinking` drop noted as a v1.1 follow-up.
+- Task 7 (PR #8): live.yml model cache moved to `/home/runner/.ollama-models`
+  bind-mounted into the service (workspace caching was unsafe); added a
+  wait-for-Ollama step; first live run is owner-triggered after merge
+  because `workflow_dispatch` only exists on the default branch.
+- Task 8 (PR #9): CLA action pinned by SHA `v2.6.1` (upstream repo
+  archived); `cla-signatures` branch must pre-exist (owner created it);
+  CONTRIBUTING's adapter method list extended with the Task 3 error
+  functions; README's "Adding a provider" replaced by a link (outside
+  the Files block); CLA text owner-approved and finalized.
+- Task 9 (this PR): `package-lock.json` regenerated beyond "version field
+  only" (see this task's entry); roadmap status line's stale "315 tests"
+  corrected to ~700 inside the line; CHANGELOG links to the tag URL
+  (no prior tag to compare from).

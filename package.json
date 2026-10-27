@@ -1,6 +1,6 @@
 {
   "name": "llm-proxy",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "scripts": {
     "start": "node dist/index.js",
     "build": "tsc -p tsconfig.build.json",

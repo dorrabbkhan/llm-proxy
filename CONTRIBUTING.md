@@ -57,8 +57,8 @@ something — say so instead of working around it.
 
 ## Contributor License Agreement
 
-First-time contributors are asked to sign the CLA (`CLA.md`, still in owner
-review) by commenting **"I have read the CLA Document and I hereby sign the
+First-time contributors are asked to sign the CLA (`CLA.md`) by commenting
+**"I have read the CLA Document and I hereby sign the
 CLA"** on their pull request. CLA Assistant Lite records signatures on the
 `cla-signatures` branch — no external service. A CLA check on your PR tells
 you where you stand.

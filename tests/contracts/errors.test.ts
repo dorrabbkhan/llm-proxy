@@ -89,6 +89,48 @@ describe("adapter error contracts", () => {
   });
 });
 
+describe("gemini error details", () => {
+  it("gemini API_KEY_INVALID reads as authentication", () => {
+    const err = adapters.gemini.toCanonicalError(400, {
+      error: {
+        code: 400,
+        message: "API key not valid. Please pass a valid API key.",
+        status: "INVALID_ARGUMENT",
+        details: [
+          {
+            "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+            reason: "API_KEY_INVALID",
+            domain: "googleapis.com",
+            metadata: { service: "generativelanguage.googleapis.com" },
+          },
+        ],
+      },
+    });
+    expect(err.kind).toBe("authentication");
+    expect(err.status).toBe(401);
+    expect(err.message).toBe(
+      "API key not valid. Please pass a valid API key.",
+    );
+  });
+
+  it("gemini details of the wrong shape fall back to the status kind", () => {
+    for (const details of ["x", [1], [{ reason: 5 }]]) {
+      let err;
+      expect(() => {
+        err = adapters.gemini.toCanonicalError(400, {
+          error: {
+            code: 400,
+            message: "bad request",
+            status: "INVALID_ARGUMENT",
+            details,
+          },
+        });
+      }).not.toThrow();
+      expect(err!.kind).toBe("invalid_request");
+    }
+  });
+});
+
 describe("toCanonicalError tolerates unrecognised bodies", () => {
   const badBodies: unknown[] = [
     null,

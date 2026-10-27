@@ -127,3 +127,13 @@ One entry per decision or per task that deviated from the plan or spec. Newest a
 - Note: `openai.adapter.ts` already exceeded the ~400-line file guideline on main (440 lines) before
   this task; the error functions were added to it per the task's Files block rather than split out —
   a split is a good candidate for a follow-up cleanup.
+- Owner-approved fixes from the PR #3 review (owner decision 2026-10-27):
+  - Anthropic `timeout` kind renders as `timeout_error` (Anthropic's documented 504 type), departing
+    from the spec §3.3 table which grouped it under `api_error`; §3.3's provider table was updated in
+    the same commit.
+  - Gemini `API_KEY_INVALID` in `error.details[]` (`google.rpc.ErrorInfo`) maps to kind
+    `authentication` (status 401). Reason: Gemini rejects a bad key with 400, so without this Task 4's
+    mapping would tell the client its own key is invalid (D1). Task 4's `toClientError` must map from
+    the target adapter's canonical kind, not only the raw status.
+  - `docs/superpowers/specs/2026-10-26-llm-proxy-v1.0.1-design.md` (§3.3 provider table) is outside
+    the task's Files block; edited here to record the owner decision.

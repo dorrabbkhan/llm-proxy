@@ -36,7 +36,7 @@
           ]
         }
       },
-      "expectKind": "invalid_request",
+      "expectKind": "authentication",
       "expectMessage": "API key not valid. Please pass a valid API key."
     },
     {

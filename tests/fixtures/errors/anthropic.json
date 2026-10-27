@@ -1,5 +1,5 @@
 {
-  "source": "https://platform.claude.com/docs/en/api/errors (error shape and type table, verbatim not_found example), https://platform.claude.com/docs/en/api/rate-limits (verbatim rate_limit example), https://github.com/anthropics/skills/blob/main/skills/claude-api/shared/error-codes.md (verbatim invalid_request example and documented 'model: <id>' not_found message), read 2026-10-27",
+  "source": "https://platform.claude.com/docs/en/api/errors (error shape and type table incl. the 504 → timeout_error row, verbatim not_found example), https://platform.claude.com/docs/en/api/rate-limits (verbatim rate_limit example), https://github.com/anthropics/skills/blob/main/skills/claude-api/shared/error-codes.md (verbatim invalid_request example and documented 'model: <id>' not_found message), read 2026-10-27",
   "render": {
     "invalid_request": { "type": "error", "error": { "type": "invalid_request_error", "message": "test message" } },
     "authentication": { "type": "error", "error": { "type": "authentication_error", "message": "test message" } },
@@ -10,7 +10,7 @@
     "unsupported": { "type": "error", "error": { "type": "api_error", "message": "test message" } },
     "upstream": { "type": "error", "error": { "type": "api_error", "message": "test message" } },
     "unavailable": { "type": "error", "error": { "type": "overloaded_error", "message": "test message" } },
-    "timeout": { "type": "error", "error": { "type": "api_error", "message": "test message" } },
+    "timeout": { "type": "error", "error": { "type": "timeout_error", "message": "test message" } },
     "internal": { "type": "error", "error": { "type": "api_error", "message": "test message" } }
   },
   "parse": [

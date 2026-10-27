@@ -378,12 +378,26 @@ export function toCanonicalError(
   status: number,
   body: unknown,
 ): CanonicalError {
-  const err = (body as { error?: { message?: unknown } } | null)?.error;
+  const err = (
+    body as { error?: { message?: unknown; details?: unknown } } | null
+  )?.error;
   const message =
     typeof err?.message === "string" && err.message.length > 0
       ? err.message
       : `Upstream gemini returned ${status}`;
-  return makeCanonicalError(kindFromStatus(status), message);
+  const details = err?.details;
+  const keyInvalid =
+    Array.isArray(details) &&
+    details.some(
+      (d) =>
+        typeof d === "object" &&
+        d !== null &&
+        (d as { reason?: unknown }).reason === "API_KEY_INVALID",
+    );
+  return makeCanonicalError(
+    keyInvalid ? "authentication" : kindFromStatus(status),
+    message,
+  );
 }
 
 export function fromCanonicalError(err: CanonicalError): unknown {

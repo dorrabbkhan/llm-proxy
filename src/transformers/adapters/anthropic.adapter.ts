@@ -349,7 +349,7 @@ const ANTHROPIC_ERROR_TYPE: Record<CanonicalErrorKind, string> = {
   unsupported: "api_error",
   upstream: "api_error",
   unavailable: "overloaded_error",
-  timeout: "api_error",
+  timeout: "timeout_error",
   internal: "api_error",
 };
 

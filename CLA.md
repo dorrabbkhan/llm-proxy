@@ -1,11 +1,11 @@
-# llm-proxy Individual Contributor License Agreement
+# babelgate Individual Contributor License Agreement
 
 Adapted from the Apache Software Foundation Individual Contributor License
 Agreement v2.2. In this document, **"the Project Owner"** means
-Dorrabb Khan (dorrabbk@gmail.com), the maintainer of the llm-proxy
-project (<https://github.com/dorrabbkhan/llm-proxy>).
+Dorrabb Khan (dorrabbk@gmail.com), the maintainer of the babelgate
+project (<https://github.com/dorrabbkhan/babelgate>).
 
-Thank you for your interest in contributing to llm-proxy (the "Project"). In
+Thank you for your interest in contributing to babelgate (the "Project"). In
 order to clarify the intellectual property license granted with
 Contributions from any person or entity, the Project Owner requires a
 Contributor License Agreement ("CLA") on file that has been signed by each

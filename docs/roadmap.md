@@ -1,10 +1,10 @@
-# llm-proxy roadmap
+# babelgate roadmap
 
 **Status:** v1.0.1 released (correctness patch on v1.0's chat + model-list translation across OpenAI,
 Gemini, Ollama and Anthropic: provider-dialect errors, native client auth headers, opt-in live suite,
 CI, Apache-2.0 + CLA; ~700 tests). **Next: v1.1** (streaming, tools, Claude Code on anything — public
-launch). Last revised 2026-10-27. Reasoning behind this roadmap:
-`docs/superpowers/specs/2026-10-26-llm-proxy-roadmap-design.md`.
+launch). Last revised 2026-10-27. Reasoning behind this roadmap: the
+2026-10-26 roadmap design spec in `docs/superpowers/specs/`.
 
 **Positioning:** a small, typed, contract-tested gateway that translates **any client format to any
 provider** — not only "OpenAI in". Three experiences must be flawless:
@@ -63,7 +63,7 @@ across every source × target, and a live smoke run against real upstreams befor
 - **Claude Code essentials.** Anthropic `system` arrays; `thinking` blocks degrade to text or are dropped,
   never crash; `count_tokens` (estimated, flagged as such); `cache_control` ignored safely; `MODEL_MAP`
   so Claude Code's big/fast model names map to real targets (`claude-sonnet-*` → `qwen3-coder`).
-- **Zero-friction install.** `npx llm-proxy --preset claude-code --target ollama`; Docker image on GHCR;
+- **Zero-friction install.** `npx babelgate --preset claude-code --target ollama`; Docker image on GHCR;
   presets print the exact env vars to paste (`ANTHROPIC_BASE_URL=…`).
 - **Validation.** Property test: every adapter's stream reassembles into the same canonical response as
   its non-streaming twin. Pair tests extended to streaming × tools across all 16 pairs. Release gate: a
@@ -85,7 +85,7 @@ across every source × target, and a live smoke run against real upstreams befor
 - **Aliases.** `fast`, `smart`, `local` → real models, so client configs survive model swaps.
 - **Fallback chains.** On 429/5xx/timeout, try the next target — only before the first streamed byte.
 - **Merged model list.** `/v1/models` and equivalents list every routed model and alias.
-- **Optional `llm-proxy.yaml`** for routes, aliases and fallbacks. Env vars still cover the
+- **Optional `babelgate.yaml`** for routes, aliases and fallbacks. Env vars still cover the
   single-target case.
 - **OpenAI-compatible targets as config.** Groq, Together, DeepSeek, OpenRouter, LM Studio, vLLM,
   llama.cpp: `type: openai-compatible, base_url`, no new adapter. ~15 providers for free.
@@ -131,7 +131,7 @@ across every source × target, and a live smoke run against real upstreams befor
 
 ## Phase 3: Teams and the paid tier (v2.0–v2.4)
 
-**[Team]** marks features in `@llm-proxy/team`, a commercial package in a private repo that uses only
+**[Team]** marks features in `@babelgate/team`, a commercial package in a private repo that uses only
 the public plugin API. Everything else stays Apache-2.0.
 
 ### v2.0 Plugin API and multiple keys (M) · open
@@ -183,8 +183,8 @@ contracts are a full-time operations business, not a part-time one.
 
 | Repo | Visibility | When |
 |---|---|---|
-| `llm-proxy` (core, Apache-2.0) | Public, stays public | Already public. CLA bot in place before the first outside PR is merged |
-| `llm-proxy-team` (commercial) | Private, permanently | Created at the start of v2.1; depends only on the public plugin API |
+| `babelgate` (core, Apache-2.0) | Public, stays public | Already public. CLA bot in place before the first outside PR is merged |
+| `babelgate-team` (commercial) | Private, permanently | Created at the start of v2.1; depends only on the public plugin API |
 | Hosted control plane | Private | Only if Phase 4 happens |
 | Specs, plans, decisions for open features | Public, in `docs/` | Always. Pricing details and customer notes live in the private repo |
 

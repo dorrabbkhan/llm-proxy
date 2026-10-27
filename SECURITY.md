@@ -27,7 +27,7 @@ made public.
 
 ## Security notes for self-hosters
 
-- `llm-proxy` forwards upstream provider keys stored in its environment —
+- `babelgate` forwards upstream provider keys stored in its environment —
   treat `.env` and any process dump as secret material.
 - Client access is gated by `PROXY_API_KEY` when set; without it the proxy is
   open — run it only on trusted networks.

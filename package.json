@@ -1,5 +1,5 @@
 {
-  "name": "llm-proxy",
+  "name": "babelgate",
   "version": "1.0.1",
   "scripts": {
     "start": "node dist/index.js",
@@ -13,7 +13,7 @@
   "keywords": [],
   "author": "Dorrabb Khan",
   "license": "Apache-2.0",
-  "description": "Proxy that translates between LLM API formats (OpenAI, Gemini, Ollama, Anthropic) via a canonical intermediate format",
+  "description": "babelgate — proxy that translates between LLM API formats (OpenAI, Gemini, Ollama, Anthropic) via a canonical intermediate format",
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.132.1",
     "@google/generative-ai": "^0.24.1",
@@ -43,8 +43,8 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dorrabbkhan/llm-proxy.git"
+    "url": "git+https://github.com/dorrabbkhan/babelgate.git"
   },
-  "bugs": "https://github.com/dorrabbkhan/llm-proxy/issues",
-  "homepage": "https://github.com/dorrabbkhan/llm-proxy#readme"
+  "bugs": "https://github.com/dorrabbkhan/babelgate/issues",
+  "homepage": "https://github.com/dorrabbkhan/babelgate#readme"
 }

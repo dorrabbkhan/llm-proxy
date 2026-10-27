@@ -4,6 +4,7 @@ import {
   fromCanonicalRequest,
   toCanonicalResponse,
   fromCanonicalResponse,
+  fromCanonicalModelList,
 } from './openai.adapter';
 import type { CanonicalRequest, CanonicalResponse } from '../../types/canonical.types';
 import type { ChatCompletionRequest, ChatCompletionResponse } from '../../types/openai.types';
@@ -233,6 +234,13 @@ describe('OpenAI Adapter', () => {
       expect(result.messages.length).toBe(original.messages.length);
       expect(result.temperature).toBe(original.temperature);
       expect(result.max_tokens).toBe(original.max_tokens);
+    });
+  });
+
+  describe('fromCanonicalModelList', () => {
+    it('model list owned_by defaults to babelgate', () => {
+      const result = fromCanonicalModelList({ models: [{ id: 'm' }] });
+      expect(result.data?.[0]?.owned_by).toBe('babelgate');
     });
   });
 });

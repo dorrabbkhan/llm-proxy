@@ -400,3 +400,5 @@ One line each; details in the task entries above. Task PRs: 1→#1, 2→#2,
   event's status and kind as its code.
 - `createIdGenerator` uses a random base64url suffix (`call_<12 chars>`);
   `sequentialIds` stays `call_0`, `call_1`, … for deterministic tests.
+- `createUtf8Decoder` flushes on an empty `Uint8Array` (a truncated trailing
+  character becomes U+FFFD); decoders call it from `end()`.

@@ -16,6 +16,14 @@ describe("createUtf8Decoder", () => {
     }
     expect(out).toBe("é😀");
   });
+
+  it("utf8 empty chunk flushes a truncated character", () => {
+    const decode = createUtf8Decoder();
+    const bytes = new TextEncoder().encode("é");
+    expect(decode(new Uint8Array([bytes[0]]))).toBe("");
+    expect(decode(new Uint8Array(0))).toBe("�");
+    expect(decode(bytes)).toBe("é");
+  });
 });
 
 describe("createSseParser", () => {

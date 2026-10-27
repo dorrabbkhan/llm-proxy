@@ -7,12 +7,17 @@
 /**
  * Incremental UTF-8 decoder: byte chunks may split a multi-byte character
  * anywhere; strings pass through. Feeding an empty Uint8Array flushes any
- * bytes left over at end-of-stream.
+ * bytes left over at end-of-stream (a truncated trailing character becomes
+ * U+FFFD) and resets the decoder.
  */
 export function createUtf8Decoder(): (chunk: Uint8Array | string) => string {
   const decoder = new TextDecoder("utf-8");
-  return (chunk) =>
-    typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true });
+  return (chunk) => {
+    if (typeof chunk === "string") return chunk;
+    return chunk.byteLength === 0
+      ? decoder.decode()
+      : decoder.decode(chunk, { stream: true });
+  };
 }
 
 /**

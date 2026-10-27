@@ -8,8 +8,8 @@
 - `gh auth status` must show your account (the conductor uses gh for PRs and comments).
 - Run it all as the dedicated, repo-scoped user/container you set up for unattended Devin runs (not your
   everyday account).
-- CI arrives with v1.0.1. Until a GitHub Actions workflow exists, `gh pr checks` reports no checks and the
-  "wait for green" steps rely on the local `./scripts/check.sh` run instead.
+- CI runs on every PR via `.github/workflows/ci.yml` (job `check`); `gh pr checks` reports it. The nightly
+  live suite is `.github/workflows/live.yml` (Ollama only, unless provider keys are added as secrets).
 
 ## 2. Files in the repo
 CLAUDE.md (conductor instructions), AGENTS.md (agent rules), .claude/commands/ and .claude/settings.json,

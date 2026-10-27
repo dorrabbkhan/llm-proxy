@@ -1,0 +1,51 @@
+name: Live
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    env:
+      LIVE_OLLAMA_MODEL: qwen2.5:0.5b
+    services:
+      ollama:
+        image: ollama/ollama
+        ports:
+          - 11434:11434
+        volumes:
+          - ${{ github.workspace }}/.ollama-models:/root/.ollama
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Cache Ollama models
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.ollama-models
+          key: ollama-models-${{ env.LIVE_OLLAMA_MODEL }}
+      - name: Wait for Ollama
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:11434/api/tags >/dev/null && exit 0
+            sleep 2
+          done
+          echo "Ollama service did not become ready" >&2
+          exit 1
+      - name: Pull the live model
+        run: docker exec ${{ job.services.ollama.id }} ollama pull ${{ env.LIVE_OLLAMA_MODEL }}
+      - run: npm ci
+      - name: Run the live suite
+        env:
+          OLLAMA_API_BASE_URL: http://localhost:11434
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: npm run test:live

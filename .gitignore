@@ -1,7 +1,8 @@
 # Compiled JavaScript and TypeScript output
 /dist/
 *.js
-!/src/**/*.d.ts # Keep TypeScript declaration files if you publish a package
+# Keep TypeScript declaration files if you publish a package
+!/src/**/*.d.ts
 
 # Node.js dependencies
 /node_modules/
@@ -14,7 +15,8 @@
 .env.production.local
 .env.staging.local
 .env.*.local
-!.env.example # Keep the example file in version control
+# Keep the example file in version control
+!.env.example
 
 # Logs
 logs/
@@ -35,10 +37,14 @@ pids/
 .nyc_output/
 
 # Editor/IDE specific files
-.vscode/        # VS Code settings (optional, you might want to share some)
-.idea/          # IntelliJ IDEA settings
-.DS_Store       # macOS specific files
-Thumbs.db       # Windows specific files
+# VS Code settings (optional, you might want to share some)
+.vscode/
+# IntelliJ IDEA settings
+.idea/
+# macOS specific files
+.DS_Store
+# Windows specific files
+Thumbs.db
 
 # npm package manager specific
 .npm/
@@ -50,7 +56,8 @@ Thumbs.db       # Windows specific files
 .pnp.*.cjs
 
 # TypeScript specific
-*.tsbuildinfo # TypeScript build info file for incremental builds
+# TypeScript build info file for incremental builds
+*.tsbuildinfo
 
 # Optional: if you have any temporary or generated files
 tmp/

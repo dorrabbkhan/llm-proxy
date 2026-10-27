@@ -1,0 +1,58 @@
+{
+  "source": "https://github.com/google/adk-go/blob/ea1865bd/model/gemini/testdata/TestModel_GenerateStream_ok.httprr (recorded streamGenerateContent?alt=sse exchange, data line verbatim)",
+  "date": "2026-10-27",
+  "model": "gemini-2.5-flash",
+  "expectedEvents": [
+    {
+      "type": "message_start",
+      "id": "yFWYabnBB8Wg1e8P3ZTdiAY",
+      "model": "gemini-2.5-flash"
+    },
+    {
+      "type": "text_delta",
+      "text": "Paris"
+    },
+    {
+      "type": "usage",
+      "usage": {
+        "inputTokens": 11,
+        "outputTokens": 1,
+        "totalTokens": 45
+      }
+    },
+    {
+      "type": "message_end",
+      "finishReason": "stop"
+    }
+  ],
+  "nonStreaming": {
+    "candidates": [
+      {
+        "content": {
+          "parts": [
+            {
+              "text": "Paris"
+            }
+          ],
+          "role": "model"
+        },
+        "finishReason": "STOP",
+        "index": 0
+      }
+    ],
+    "usageMetadata": {
+      "promptTokenCount": 11,
+      "candidatesTokenCount": 1,
+      "totalTokenCount": 45,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 11
+        }
+      ],
+      "thoughtsTokenCount": 33
+    },
+    "modelVersion": "gemini-2.5-flash",
+    "responseId": "yFWYabnBB8Wg1e8P3ZTdiAY"
+  }
+}

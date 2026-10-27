@@ -1,0 +1,37 @@
+{
+  "source": "https://github.com/google/adk-go/blob/ea1865bd/internal/llminternal/testdata/TestParallelFunctionCalls_test_parallel_function_calls_gemini-2.5-flash.httprr (recorded streamGenerateContent?alt=sse exchange 2 \u2014 the stream after three functionResults, data lines verbatim)",
+  "date": "2026-10-27",
+  "model": "gemini-2.5-flash",
+  "expectedEvents": [
+    {
+      "type": "message_start",
+      "id": "ZyS5aZaqIYSAkdUP_fnxqQU",
+      "model": "gemini-2.5-flash"
+    },
+    {
+      "type": "text_delta",
+      "text": "The sum of "
+    },
+    {
+      "type": "text_delta",
+      "text": "2 and 3 is 5.\nThe sum of 4 and "
+    },
+    {
+      "type": "text_delta",
+      "text": "5 is 9.\nThe sum of 6 and 7 is 13."
+    },
+    {
+      "type": "usage",
+      "usage": {
+        "inputTokens": 338,
+        "outputTokens": 37,
+        "totalTokens": 375
+      }
+    },
+    {
+      "type": "message_end",
+      "finishReason": "stop"
+    }
+  ],
+  "nonStreaming": null
+}

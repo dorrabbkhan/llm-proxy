@@ -1,0 +1,55 @@
+{
+  "source": "recorded: ollama 0.40.11, qwen2.5:0.5b (via npm run record:streams)",
+  "date": "2026-10-27",
+  "model": "qwen2.5:0.5b",
+  "expectedEvents": [
+    {
+      "type": "message_start",
+      "id": "call_0",
+      "model": "qwen2.5:0.5b"
+    },
+    {
+      "type": "tool_call_start",
+      "index": 0,
+      "id": "call_9400k7rc",
+      "name": "get_weather"
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 0,
+      "argumentsDelta": "{\"location\":\"Paris\"}"
+    },
+    {
+      "type": "tool_call_end",
+      "index": 0
+    },
+    {
+      "type": "tool_call_start",
+      "index": 1,
+      "id": "call_8aky1a0d",
+      "name": "get_weather"
+    },
+    {
+      "type": "tool_call_delta",
+      "index": 1,
+      "argumentsDelta": "{\"location\":\"London\"}"
+    },
+    {
+      "type": "tool_call_end",
+      "index": 1
+    },
+    {
+      "type": "usage",
+      "usage": {
+        "inputTokens": 164,
+        "outputTokens": 40,
+        "totalTokens": 204
+      }
+    },
+    {
+      "type": "message_end",
+      "finishReason": "tool_call"
+    }
+  ],
+  "nonStreaming": null
+}

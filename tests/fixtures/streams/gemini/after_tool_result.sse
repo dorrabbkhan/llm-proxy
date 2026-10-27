@@ -1,0 +1,6 @@
+data: {"candidates": [{"content": {"parts": [{"text": "The sum of "}],"role": "model"},"index": 0}],"usageMetadata": {"promptTokenCount": 338,"candidatesTokenCount": 3,"totalTokenCount": 341,"promptTokensDetails": [{"modality": "TEXT","tokenCount": 338}]},"modelVersion": "gemini-2.5-flash","responseId": "ZyS5aZaqIYSAkdUP_fnxqQU"}
+
+data: {"candidates": [{"content": {"parts": [{"text": "2 and 3 is 5.\nThe sum of 4 and "}],"role": "model"},"index": 0}],"usageMetadata": {"promptTokenCount": 338,"candidatesTokenCount": 18,"totalTokenCount": 356,"promptTokensDetails": [{"modality": "TEXT","tokenCount": 338}]},"modelVersion": "gemini-2.5-flash","responseId": "ZyS5aZaqIYSAkdUP_fnxqQU"}
+
+data: {"candidates": [{"content": {"parts": [{"text": "5 is 9.\nThe sum of 6 and 7 is 13."}],"role": "model"},"finishReason": "STOP","index": 0}],"usageMetadata": {"promptTokenCount": 338,"candidatesTokenCount": 37,"totalTokenCount": 375,"promptTokensDetails": [{"modality": "TEXT","tokenCount": 338}]},"modelVersion": "gemini-2.5-flash","responseId": "ZyS5aZaqIYSAkdUP_fnxqQU"}
+

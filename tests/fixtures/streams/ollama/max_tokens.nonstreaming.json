@@ -1,0 +1,1 @@
+{"model":"qwen2.5:0.5b","created_at":"2026-10-27T15:28:30.410148286Z","message":{"role":"assistant","content":"Sure, here's the"},"done":true,"done_reason":"length","total_duration":57268039,"load_duration":1087537,"prompt_eval_count":38,"prompt_eval_cached_count":37,"prompt_eval_duration":12228000,"eval_count":5,"eval_duration":40795000}

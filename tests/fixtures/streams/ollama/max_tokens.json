@@ -1,0 +1,45 @@
+{
+  "source": "recorded: ollama 0.40.11, qwen2.5:0.5b (via npm run record:streams)",
+  "date": "2026-10-27",
+  "model": "qwen2.5:0.5b",
+  "expectedEvents": [
+    {
+      "type": "message_start",
+      "id": "call_0",
+      "model": "qwen2.5:0.5b"
+    },
+    {
+      "type": "text_delta",
+      "text": "Sure"
+    },
+    {
+      "type": "text_delta",
+      "text": ","
+    },
+    {
+      "type": "text_delta",
+      "text": " here"
+    },
+    {
+      "type": "text_delta",
+      "text": "'s"
+    },
+    {
+      "type": "text_delta",
+      "text": " the"
+    },
+    {
+      "type": "usage",
+      "usage": {
+        "inputTokens": 38,
+        "outputTokens": 5,
+        "totalTokens": 43
+      }
+    },
+    {
+      "type": "message_end",
+      "finishReason": "length"
+    }
+  ],
+  "nonStreaming": null
+}

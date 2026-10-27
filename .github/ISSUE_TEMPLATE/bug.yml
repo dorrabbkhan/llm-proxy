@@ -1,11 +1,11 @@
 name: Bug report
-description: Something in llm-proxy isn't working as documented
+description: Something in babelgate isn't working as documented
 labels: [bug]
 body:
   - type: input
     id: version
     attributes:
-      label: llm-proxy version
+      label: babelgate version
       description: From package.json, or the image tag / commit you deployed.
       placeholder: "1.0.0"
     validations:

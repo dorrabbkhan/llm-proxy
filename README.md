@@ -1,4 +1,4 @@
-# llm-proxy
+# babelgate
 
 A small proxy that sits in front of LLM APIs and translates between their
 request/response formats. Point your OpenAI client at it, and it can talk to
@@ -273,8 +273,8 @@ for many providers in v1.2, and beyond — lives in
 ## Docker
 
 ```bash
-docker build -t llm-proxy .
-docker run -p 3000:3000 --env-file .env llm-proxy
+docker build -t babelgate .
+docker run -p 3000:3000 --env-file .env babelgate
 ```
 
 Multi-stage build: provider SDKs are `devDependencies` (type-only imports),

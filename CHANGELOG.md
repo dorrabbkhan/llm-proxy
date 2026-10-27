@@ -84,5 +84,5 @@ gets the repository ready for outside contributors.
 - **Ollama `thinking` output is dropped** by the proxy (the canonical
   format has no field for it); planned for v1.1.
 
-[Unreleased]: https://github.com/dorrabbkhan/llm-proxy/compare/v1.0.1...HEAD
-[1.0.1]: https://github.com/dorrabbkhan/llm-proxy/releases/tag/v1.0.1
+[Unreleased]: https://github.com/dorrabbkhan/babelgate/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/dorrabbkhan/babelgate/releases/tag/v1.0.1

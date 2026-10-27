@@ -1,4 +1,4 @@
-# Contributing to llm-proxy
+# Contributing to babelgate
 
 Thanks for your interest in contributing. This document covers setup, the
 checks every change must pass, and the project's ground rules. The binding

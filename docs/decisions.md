@@ -2,6 +2,8 @@
 
 One entry per decision or per task that deviated from the plan or spec. Newest at the bottom.
 
+> Renamed llm-proxy → babelgate in v1.1; older entries keep the old name.
+
 ## 2026-10-26: roadmap brainstorm
 
 - Audience order: individuals and self-hosting developers (Phases 1–2), then teams (Phase 3), then an
@@ -350,3 +352,20 @@ One line each; details in the task entries above. Task PRs: 1→#1, 2→#2,
   only" (see this task's entry); roadmap status line's stale "315 tests"
   corrected to ~700 inside the line; CHANGELOG links to the tag URL
   (no prior tag to compare from).
+
+## v1.1 Task 1: rename to babelgate
+
+- `fromCanonicalModelList`'s `owned_by` fallback is now `"babelgate"` (was
+  `"llm-proxy"`) — a client-visible wire change on the OpenAI model list.
+- Agent tooling deliberately keeps the llm-proxy name for v1.1 (plan Task 1
+  exclusion list): `.devin/skills/**`, `.claude/**`, `scripts/llm-proxy-loop.sh`,
+  `scripts/conductor/**`, `CLAUDE.md`, `AGENTS.md`, `CONDUCTOR-SETUP.md`, and
+  past specs/plans/decisions.
+- Files outside the Files block: `CHANGELOG.md` (release/compare URLs moved to
+  the new repo name — required by the task's `git grep llm-proxy` check);
+  `src/transformers/adapters/openai.adapter.test.ts` (the new `owned_by` test,
+  per Step 1).
+- `docs/roadmap.md`'s link to the roadmap design spec was reworded to a
+  date-based pointer: the spec file keeps its `llm-proxy` name (past spec files
+  are excluded from the rename), so the literal filename could not stay without
+  failing the task's grep check.

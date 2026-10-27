@@ -425,7 +425,7 @@ export function fromCanonicalModelList(
       id: m.id,
       object: "model",
       created: m.created ?? 0,
-      owned_by: m.ownedBy ?? "llm-proxy",
+      owned_by: m.ownedBy ?? "babelgate",
     })),
   };
 }

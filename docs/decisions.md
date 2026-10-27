@@ -621,3 +621,48 @@ One line each; details in the task entries above. Task PRs: 1→#1, 2→#2,
 - Pre-headers non-2xx in `postStream` throws an `UpstreamError` carrying the
   upstream status and parsed body, so proxy.service's `toClientFacing` renders
   exactly the same client error as the JSON path.
+
+## v1.1 Task 5: Anthropic stream decoder/encoder
+
+- Spec sections implemented: §3.3 Anthropic row (event-typed SSE
+  decoder/encoder, thinking/signature deltas and ping dropped,
+  `input_json_delta.partial_json` → `tool_call_delta`, error events via
+  `toCanonicalError`), §3.4 (buffered tool arguments → one
+  `input_json_delta`, `_invalid_arguments` wrapper on parse failure).
+- Wire-format source checked 2026-10-27:
+  https://docs.claude.com/en/api/messages-streaming ("Streaming
+  Messages" — event flow `message_start` → `content_block_*` →
+  `message_delta` → `message_stop`, `ping` anywhere, `event: error`
+  mid-stream; `usage.output_tokens` cumulative in `message_delta`;
+  `input_json_delta.partial_json`) and
+  https://docs.claude.com/en/api/errors (error `type` ↔ HTTP status
+  table used for the decoder's in-stream error mapping:
+  `overloaded_error` → 529 → kind `unavailable`, matching the error
+  fixture; `billing_error`/`conflict_error` also mapped, unknown types
+  fall back to 500).
+- `message_end` is emitted on `message_stop`, not `message_delta`:
+  `message_delta` only holds the stop reason and cumulative usage.
+  Otherwise a stream cut between `message_delta` and `message_stop`
+  would emit `message_end` and could not end in an `error` event —
+  Review Focus #2 names `message_stop` as the terminal marker.
+- Wire `content_block` indices are assigned at emission time, so they
+  stay contiguous even when canonical tool events interleave
+  (canonical `index` keys the buffer, per §3.1 rule 5); the first call
+  to reach `tool_call_end` gets the next content-block index.
+- `message_start`'s `message.usage` is `{input_tokens: 0,
+  output_tokens: 0}` — the real input count only arrives with the
+  canonical `usage` event and lands in `message_delta.usage`
+  (`input_tokens` included there too, matching the recorded
+  `parallel_tool_calls` fixture and giving SDK `finalMessage()` the
+  correct totals).
+- `mapFinishReason`/`mapToAnthropicStopReason` are reused as-is from
+  the adapter, so unlisted stop reasons (`stop_sequence`, `pause_turn`,
+  `refusal`, `model_context_window_exceeded`, `container` deltas)
+  follow the non-streaming mapping (default `stop` / `end_turn`).
+- Errors before the first byte and retry/timeout behaviour are
+  unchanged — they flow through Task 4's `postStream` + `toClientError`
+  path, verified by `stream.test.ts` and the remaining 501 rows.
+- `errors.test.ts` now filters the `stream:true → 501` rows on a
+  STREAMING_ADAPTERS set (openai + anthropic) — replaced rows:
+  anthropic→anthropic, anthropic→openai, openai→anthropic, each now
+  covered by a named case in `tests/integration/stream.test.ts`.

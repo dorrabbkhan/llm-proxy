@@ -24,7 +24,7 @@ const WIRE_EXT: Record<Provider, string> = {
 };
 
 // Providers whose createStreamDecoder is implemented.
-const DECODED_PROVIDERS: Provider[] = ["openai"];
+const DECODED_PROVIDERS: Provider[] = ["openai", "anthropic"];
 
 const EVERY_SPLIT_MAX_BYTES = 4 * 1024;
 const SAMPLED_SPLIT_POINTS = 150;
@@ -130,5 +130,61 @@ describe("stream decoders", () => {
       new TextEncoder().encode(truncated),
     ]);
     expect(events.at(-1)?.type).toBe("error");
+  });
+
+  it("anthropic truncated stream ends with an error event", () => {
+    // Drop `event: message_stop` — the socket just closes mid-stream and
+    // the decoder must report an in-stream error, not a silent
+    // half-message (spec §3.2, docs.claude.com "Streaming Messages":
+    // message_stop is the terminal event).
+    const text = readFileSync(
+      join(STREAMS_DIR, "anthropic", "text.sse"),
+      "utf8",
+    );
+    const truncated = text
+      .split("\n")
+      .filter((l) => !l.includes("message_stop"))
+      .join("\n");
+
+    const events = decode("anthropic", "claude-opus-5-5", [
+      new TextEncoder().encode(truncated),
+    ]);
+    expect(events.at(-1)?.type).toBe("error");
+  });
+
+  it("anthropic decoder drops thinking deltas", () => {
+    // Thinking blocks and their thinking_delta/signature_delta events
+    // produce no canonical events (docs.claude.com "Streaming with
+    // extended thinking" — built inline; no fixture carries them).
+    const sse = [
+      'event: message_start\ndata: {"type":"message_start","message":{"id":"msg_t1","type":"message","role":"assistant","model":"claude-opus-5-5","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":1}}}',
+      'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}',
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"secret reasoning"}}',
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"EqQBCgIYAhIM"}}',
+      'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}',
+      'event: content_block_start\ndata: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}',
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Hi"}}',
+      'event: content_block_stop\ndata: {"type":"content_block_stop","index":1}',
+      'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":5}}',
+      'event: message_stop\ndata: {"type":"message_stop"}',
+      "",
+    ].join("\n\n");
+
+    const events = decode("anthropic", "claude-opus-5-5", [
+      new TextEncoder().encode(sse),
+    ]);
+    expect(events).toEqual([
+      {
+        type: "message_start",
+        id: "msg_t1",
+        model: "claude-opus-5-5",
+      },
+      { type: "text_delta", text: "Hi" },
+      {
+        type: "usage",
+        usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+      },
+      { type: "message_end", finishReason: "stop" },
+    ]);
   });
 });

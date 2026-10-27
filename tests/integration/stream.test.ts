@@ -26,6 +26,7 @@ import {
   MOCK_BASE_URLS,
 } from "../mocks/upstreams";
 import openaiFixtures from "../fixtures/openai.json";
+import anthropicFixtures from "../fixtures/anthropic.json";
 
 /**
  * End-to-end streaming (spec §3.2): SSE in the client's own dialect,
@@ -103,6 +104,65 @@ describe("streaming (spec §3.2)", () => {
       stream: true,
       stream_options: { include_usage: true },
     });
+  });
+
+  it("anthropic → openai stream:true streams SSE", async () => {
+    setPair("anthropic", "openai");
+
+    const res = await postStream("/v1/messages", {
+      ...(anthropicFixtures.requests.basic as Record<string, unknown>),
+      stream: true,
+    });
+
+    // Streams in the source's format — Anthropic event-typed SSE.
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/event-stream");
+    const body = res.body as string;
+    expect(body).toContain("event: message_start");
+    expect(body).toContain("event: message_delta");
+    expect(body.trimEnd().endsWith('data: {"type":"message_stop"}')).toBe(
+      true,
+    );
+
+    expect(capturedRequests.openai[0]).toMatchObject({
+      stream: true,
+      stream_options: { include_usage: true },
+    });
+  });
+
+  it("openai → anthropic stream:true streams SSE", async () => {
+    setPair("openai", "anthropic");
+
+    const res = await postStream("/v1/chat/completions", STREAM_BODY);
+
+    // Streams in the source's format — OpenAI SSE chunks plus [DONE].
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/event-stream");
+    const body = res.body as string;
+    expect(body).toContain("data: {");
+    expect(body.trimEnd().endsWith("data: [DONE]")).toBe(true);
+
+    // The upstream request asked for a stream (spec §3.2).
+    expect(capturedRequests.anthropic[0]).toMatchObject({ stream: true });
+  });
+
+  it("anthropic → anthropic stream:true streams SSE", async () => {
+    setPair("anthropic", "anthropic");
+
+    const res = await postStream("/v1/messages", {
+      ...(anthropicFixtures.requests.basic as Record<string, unknown>),
+      stream: true,
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/event-stream");
+    const body = res.body as string;
+    expect(body).toContain("event: message_start");
+    expect(body.trimEnd().endsWith('data: {"type":"message_stop"}')).toBe(
+      true,
+    );
+
+    expect(capturedRequests.anthropic[0]).toMatchObject({ stream: true });
   });
 
   it("stream request upstream 404 → JSON error in source dialect", async () => {

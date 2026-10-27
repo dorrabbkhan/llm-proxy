@@ -32,4 +32,4 @@ The matching spec is read from the plan's `**Spec:**` line, not hard-coded.
    - No prompt bodies, completions or API keys are logged or included in errors.
    - Unsupported inputs fail with a clear error in the source provider's shape, never a 500 or a silent drop.
 5. Check out the PR branch (`gh pr checkout <N>`), run `npm ci` and the full `./scripts/check.sh`, and report the results.
-6. End with **APPROVE** or **CHANGES NEEDED**, followed by a numbered list of required fixes. Post the verdict as a PR review comment: `gh pr review <N> --comment --body "<verdict and required fixes>"`, and print it here as well.
+6. End with **APPROVE** or **CHANGES NEEDED**, followed by a numbered list of required fixes. Print the verdict here only. Do not post anything to GitHub (no `gh pr review`, no `gh pr comment`): the session runs under the owner's account, and the conductor posts the status comment.

@@ -14,6 +14,8 @@ describe('errorHandler', () => {
     mockRes = {
       status: vi.fn().mockReturnThis(),
       json: vi.fn().mockReturnThis(),
+      set: vi.fn().mockReturnThis(),
+      locals: {},
     };
     mockNext = vi.fn();
   });
@@ -23,36 +25,38 @@ describe('errorHandler', () => {
   });
 
   describe('ProxyError handling', () => {
-    it('should return correct status for ValidationError', () => {
+    it('should render ValidationError in the source dialect on provider paths', () => {
+      mockRes.locals = { sourceApi: 'openai' };
       const error = new ValidationError('Invalid input');
 
       errorHandler(error, mockReq as Request, mockRes as Response, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(400);
-      expect(mockRes.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          error: expect.objectContaining({
-            code: 'VALIDATION_ERROR',
-            status: 400,
-          }),
-        })
-      );
+      expect(mockRes.json).toHaveBeenCalledWith({
+        error: {
+          message: 'Invalid input',
+          type: 'invalid_request_error',
+          param: null,
+          code: 'invalid_request',
+        },
+      });
     });
 
-    it('should return correct status for UpstreamError', () => {
+    it('should render UpstreamError in the source dialect on provider paths', () => {
+      mockRes.locals = { sourceApi: 'openai' };
       const error = new UpstreamError('API failed', 429);
 
       errorHandler(error, mockReq as Request, mockRes as Response, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(502);
-      expect(mockRes.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          error: expect.objectContaining({
-            code: 'UPSTREAM_ERROR',
-            status: 502,
-          }),
-        })
-      );
+      expect(mockRes.json).toHaveBeenCalledWith({
+        error: {
+          message: 'API failed',
+          type: 'api_error',
+          param: null,
+          code: 'upstream',
+        },
+      });
     });
   });
 

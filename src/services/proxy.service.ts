@@ -5,7 +5,9 @@ import {
   type Provider,
   type ProviderRoute,
 } from "../transformers";
+import { findSourceRoute } from "../transformers/adapters";
 import { postJson, getJson } from "./http-client";
+import { toClientError } from "./upstream-errors";
 import {
   canonicalModelListSchema,
   canonicalRequestSchema,
@@ -20,6 +22,24 @@ import { logger } from "../utils/logger";
 
 export interface ProxyResult {
   body: unknown;
+}
+
+/**
+ * Attach the spec §3.3 client-facing rendering to an upstream failure.
+ * Only real upstream error statuses (≥ 400) go through the mapping
+ * table — timeouts, transport failures and non-JSON 2xx replies already
+ * carry their final client-facing message.
+ */
+function toClientFacing(err: UpstreamError, target: Provider): UpstreamError {
+  if (err.upstreamStatus !== undefined && err.upstreamStatus >= 400) {
+    err.clientError = toClientError(
+      target,
+      err.upstreamStatus,
+      err.upstreamBody,
+      err.retryAfterSeconds,
+    );
+  }
+  return err;
 }
 
 /**
@@ -72,9 +92,7 @@ export async function proxyRequest(
   const targetApi = config.targetApi;
 
   // Match the incoming path to a route on the configured source provider
-  const route = PROVIDER_ROUTES[sourceApi].find(
-    (r) => r.method === method && path.startsWith(r.pathPrefix),
-  );
+  const route = findSourceRoute(sourceApi, method, path);
   if (!route) return null;
 
   if (route.kind === "models") {
@@ -106,8 +124,17 @@ export async function proxyRequest(
   }
 
   // The model comes from the source path when the provider puts it there
-  // (Gemini), otherwise from the canonical request.
-  const model = route.modelFromPath?.(path) ?? parsed.data.model;
+  // (Gemini), otherwise from the canonical request. An explicitly empty
+  // model in the path (e.g. /v1beta/models/:generateContent) is a client
+  // error, not something to send upstream.
+  const modelFromPath = route.modelFromPath?.(path);
+  if (modelFromPath === "") {
+    throw new ValidationError(
+      `Malformed ${sourceApi} request path: model is empty`,
+      { requestId },
+    );
+  }
+  const model = modelFromPath ?? parsed.data.model;
   parsed.data.model = model;
 
   const targetBody = adapters[targetApi].fromCanonicalRequest(parsed.data);
@@ -129,14 +156,20 @@ export async function proxyRequest(
     timeoutMs: config.upstreamTimeoutMs,
     retries: config.upstreamRetries,
     requestId,
+  }).catch((err) => {
+    throw err instanceof UpstreamError
+      ? toClientFacing(err, targetApi)
+      : err;
   });
 
   if (upstream.status < 200 || upstream.status >= 300) {
-    throw new UpstreamError(
+    const err = new UpstreamError(
       `Upstream ${targetApi} returned ${upstream.status}`,
       upstream.status,
       upstream.body,
     );
+    err.retryAfterSeconds = upstream.retryAfterSeconds;
+    throw toClientFacing(err, targetApi);
   }
 
   // Target → Canonical → Source
@@ -203,14 +236,20 @@ async function proxyModelList(
     timeoutMs: config.upstreamTimeoutMs,
     retries: config.upstreamRetries,
     requestId,
+  }).catch((err) => {
+    throw err instanceof UpstreamError
+      ? toClientFacing(err, targetApi)
+      : err;
   });
 
   if (upstream.status < 200 || upstream.status >= 300) {
-    throw new UpstreamError(
+    const err = new UpstreamError(
       `Upstream ${targetApi} returned ${upstream.status}`,
       upstream.status,
       upstream.body,
     );
+    err.retryAfterSeconds = upstream.retryAfterSeconds;
+    throw toClientFacing(err, targetApi);
   }
 
   const canonical = adapters[targetApi].toCanonicalModelList(upstream.body);

@@ -137,3 +137,48 @@ One entry per decision or per task that deviated from the plan or spec. Newest a
     the target adapter's canonical kind, not only the raw status.
   - `docs/superpowers/specs/2026-10-26-llm-proxy-v1.0.1-design.md` (§3.3 provider table) is outside
     the task's Files block; edited here to record the owner decision.
+
+## v1.0.1 Task 4: Error wiring — source middleware, dialect rendering, upstream mapping
+
+- Resolves the open `bodyPreview` question from Task 2 (owner decision 2026-10-27, PR #2):
+  `bodyPreview` stays in `err.context` outside production and is carried into the non-production
+  response `details` on provider paths (`{ ...dialectBody, details: { bodyPreview } }`), and is
+  never written to any log line — the error handler no longer logs `err.context` for
+  `UpstreamError` at all. `upstreamBody` is likewise kept as a field (for the §3.3 warn-line
+  summary) but removed from `context`, so it can no longer reach `details` or a log line.
+- `toClientError` decides the credentials case from the target adapter's canonical kind
+  (`authentication`/`permission` → 502 credentials message), not the raw upstream status — per the
+  owner decision on PR #3 (option 3b), so a Gemini 400 + `API_KEY_INVALID` reply becomes
+  `Upstream gemini rejected the proxy's credentials (400)` with no Gemini-specific branch.
+- Upstream 5xx other than 503/529 → client 502 `upstream`, per the spec §3.3 table — this
+  intentionally overrides `kindFromStatus(500) → internal` for the upstream path: a 500 from the
+  provider is an upstream condition, not a proxy bug.
+- Log suppression for auth failures covers statuses other than 401/403: the warn line carries no
+  upstream message whenever the client error is `upstream` kind on a sub-500 status, which only
+  arises from the credentials rule (e.g. Gemini's 400 `API_KEY_INVALID`). This satisfies the
+  owner requirement that the API_KEY_INVALID upstream message reach neither client body nor logs.
+- `Retry-After` is passed through whenever the upstream sent it (the table only names 429, but
+  the passthrough is applied for any status — it is equally meaningful on 503).
+- `proxy.service` only applies `toClientError` to `UpstreamError`s carrying an `upstreamStatus`
+  ≥ 400. The non-JSON-2xx error carries upstreamStatus 200 and keeps its own message; timeouts and
+  transport failures carry no upstreamStatus and keep their unchanged 504/502 rendering.
+- `/v1beta/models/:generateContent` (empty model from `modelFromPath`) now returns a clean
+  `invalid_request` 400 before any upstream call — the optional item from the PR #2 review.
+  `modelFromPath` returning `undefined` (no `:` in the path, e.g. bare `POST /v1beta/models`) keeps
+  the existing fallback to `parsed.data.model`.
+- `resolveSource` reads `req.path` (set from the URL, before the body parser) and never throws —
+  a broken config leaves `sourceApi` unset and errors keep the generic shape.
+- The "Unhandled error" log line no longer serializes `err` wholesale: body-parser errors carry
+  the raw request body on `err.body` and echo a fragment of it in `err.message` (prompt text).
+  Non-ProxyError errors now log whitelisted fields only (`errType`, message, stack), and
+  `entity.*` errors log only `body-parser error: <type>` — pinned by the "malformed request body
+  is not echoed into the log" test.
+- Test notes: `tests/integration/errors.test.ts` sets `UPSTREAM_RETRIES=0` so 429/503 take the
+  last-attempt path immediately without backoff sleeps (retry behaviour itself is covered in
+  http-client.test.ts). Log capture spies on the real pino logger methods and serializes the call
+  arguments with a circular-safe stringify — pino's own serialization decides nothing here beyond
+  the argument object, and the pretty transport runs in a worker thread whose fd writes cannot be
+  intercepted in-process.
+- Files outside the Files block: `src/middleware/request-logger.ts` (+ test) — pre-existing leak
+  since v1.0: pino-http's default serializers logged client credential headers and `?key=` URLs;
+  fixed here per owner decision 2026-10-27 (PR #4, option a).

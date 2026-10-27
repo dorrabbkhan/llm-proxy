@@ -42,13 +42,6 @@ const pairs = providers.flatMap((source) =>
   providers.map((target) => ({ source, target })),
 );
 
-const FIXTURES: Record<Provider, { requests: Record<string, unknown> }> = {
-  openai: openaiFixtures,
-  gemini: geminiFixtures,
-  ollama: ollamaFixtures,
-  anthropic: anthropicFixtures,
-};
-
 // A valid chat request per source format
 const SOURCE_CALL: Record<Provider, { path: string; body: object }> = {
   openai: { path: "/v1/chat/completions", body: openaiFixtures.requests.basic as object },

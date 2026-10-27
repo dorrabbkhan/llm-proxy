@@ -717,3 +717,24 @@ One line each; details in the task entries above. Task PRs: 1→#1, 2→#2,
   pair, which now streams by design (spec §1.2 F1); they were
   re-pointed at the openai→gemini pair (gemini is the remaining stub
   until Task 7) so the refusal path stays covered.
+- Fix round 1 (owner-requested):
+  - `tests/contracts/stream-sdk.test.ts`: module-level
+    `currentContentType` is reset to `"text/event-stream"` in a
+    `beforeEach`; ollama cases still override to
+    `application/x-ndjson` — no case depends on test order.
+  - Decoder shape guards: a line that parses as JSON but isn't a
+    plain object (number, string, array, `null`) and a
+    `message.tool_calls` that isn't an array both emit the same
+    canonical `upstream` error as an undecodable line and finish the
+    stream — previously the first produced a spurious `message_start`
+    (`null` threw) and the second threw from `feed()`.
+  - Decoder: a string `function.arguments` passes through verbatim as
+    `argumentsDelta` (it is already the JSON encoding); objects keep
+    `JSON.stringify`, missing stays `"{}"`.
+  - Encoder: calls open at `message_end` flush in ascending canonical
+    index as `message.tool_calls` lines just before the `done:true`
+    line (one `logger.warn` naming only the count); before an `error`
+    event they are dropped (one warn naming the count). A
+    `tool_call_delta`/`tool_call_end` for an index that never had
+    `tool_call_start` now `logger.warn`s (event type and index only)
+    instead of dropping silently; output unchanged.

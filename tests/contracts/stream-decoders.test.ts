@@ -197,6 +197,84 @@ describe("stream decoders", () => {
     ]);
   });
 
+  it("ollama decoder: non-object JSON line → error event", () => {
+    // A line that parses as JSON but isn't a plain object can't carry a
+    // chat response — the same upstream error as an undecodable line,
+    // and nothing else (no spurious message_start).
+    for (const line of ["5", '"hello"', "[1,2,3]", "null", "true"]) {
+      const events = decode("ollama", "qwen2.5:0.5b", [
+        new TextEncoder().encode(`${line}\n`),
+      ]);
+      expect(events, `line ${line}`).toEqual([
+        {
+          type: "error",
+          error: {
+            kind: "upstream",
+            status: 502,
+            message: "Upstream sent an undecodable stream chunk",
+          },
+        },
+      ]);
+    }
+  });
+
+  it("ollama decoder: non-array tool_calls → error event", () => {
+    // `message.tool_calls` present but not an array is a malformed
+    // response — the same upstream error, not a throw from feed().
+    const ndjson =
+      '{"model":"qwen2.5:0.5b","message":{"role":"assistant","content":"","tool_calls":{"0":{"function":{"name":"get_weather"}}}},"done":false}\n';
+
+    const events = decode("ollama", "qwen2.5:0.5b", [
+      new TextEncoder().encode(ndjson),
+    ]);
+    expect(events).toEqual([
+      { type: "message_start", id: "call_0", model: "qwen2.5:0.5b" },
+      {
+        type: "error",
+        error: {
+          kind: "upstream",
+          status: 502,
+          message: "Upstream sent an undecodable stream chunk",
+        },
+      },
+    ]);
+  });
+
+  it("ollama decoder passes string arguments through unchanged", () => {
+    // Recorded Ollama sends `function.arguments` as an object, but a
+    // string on the wire is already the JSON encoding — it passes
+    // through verbatim rather than being double-encoded.
+    const ndjson = [
+      '{"model":"qwen2.5:0.5b","message":{"role":"assistant","content":"","tool_calls":[{"id":"call_x","function":{"index":0,"name":"get_weather","arguments":"{\\"city\\":\\"Paris\\"}"}}]},"done":false}',
+      '{"model":"qwen2.5:0.5b","message":{"role":"assistant","content":""},"done":true,"done_reason":"stop","prompt_eval_count":10,"eval_count":5}',
+      "",
+    ].join("\n");
+
+    const events = decode("ollama", "qwen2.5:0.5b", [
+      new TextEncoder().encode(ndjson),
+    ]);
+    expect(events).toEqual([
+      { type: "message_start", id: "call_0", model: "qwen2.5:0.5b" },
+      {
+        type: "tool_call_start",
+        index: 0,
+        id: "call_x",
+        name: "get_weather",
+      },
+      {
+        type: "tool_call_delta",
+        index: 0,
+        argumentsDelta: '{"city":"Paris"}',
+      },
+      { type: "tool_call_end", index: 0 },
+      {
+        type: "usage",
+        usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+      },
+      { type: "message_end", finishReason: "tool_call" },
+    ]);
+  });
+
   it("anthropic decoder drops thinking deltas", () => {
     // Thinking blocks and their thinking_delta/signature_delta events
     // produce no canonical events (docs.claude.com "Streaming with

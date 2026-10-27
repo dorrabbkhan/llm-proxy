@@ -38,10 +38,15 @@ const OLLAMA_DONE_REASON: Record<string, CanonicalFinishReason> = {
  * `done: true` line carries usage (`prompt_eval_count`, `eval_count`)
  * and `done_reason` — a stream that ended in tool calls reports
  * `tool_call` as Ollama itself means it, `length` maps to `length`.
- * A mid-stream `{"error":"…"}` line (docs.ollama.com/api/errors) maps
+ * `function.arguments` is normally an object (stringified into the
+ * canonical delta); a string passes through verbatim. A mid-stream
+ * `{"error":"…"}` line (docs.ollama.com/api/errors) maps
  * through `toCanonicalError` — the wire carries no status, so the same
  * failure returned pre-stream (HTTP 500 → `internal`) applies. A
- * stream ending without `done: true` ends in an `error` event.
+ * line that isn't a plain object, or a `tool_calls` that isn't an
+ * array, is an undecodable chunk — one `error` event and the stream
+ * is finished. A stream ending without `done: true` ends in an
+ * `error` event.
  */
 export function createStreamDecoder(
   model: string,
@@ -75,7 +80,12 @@ export function createStreamDecoder(
     ) {
       out.push({ type: "text_delta", text: message.content });
     }
-    for (const tc of message?.tool_calls ?? []) {
+    const toolCalls = message?.tool_calls;
+    if (toolCalls != null && !Array.isArray(toolCalls)) {
+      failUndecodable(out);
+      return;
+    }
+    for (const tc of toolCalls ?? []) {
       sawToolCalls = true;
       const index = nextIndex++;
       out.push({
@@ -84,10 +94,14 @@ export function createStreamDecoder(
         id: typeof tc?.id === "string" ? tc.id : ids(),
         name: tc?.function?.name ?? "",
       });
+      // `arguments` is normally an object (JSON.stringify it); a string
+      // is already the JSON encoding and passes through verbatim.
+      const args = tc?.function?.arguments;
       out.push({
         type: "tool_call_delta",
         index,
-        argumentsDelta: JSON.stringify(tc?.function?.arguments ?? {}),
+        argumentsDelta:
+          typeof args === "string" ? args : JSON.stringify(args ?? {}),
       });
       out.push({ type: "tool_call_end", index });
     }
@@ -112,23 +126,31 @@ export function createStreamDecoder(
     }
   }
 
+  function failUndecodable(out: CanonicalStreamEvent[]): void {
+    out.push({
+      type: "error",
+      error: makeCanonicalError(
+        "upstream",
+        "Upstream sent an undecodable stream chunk",
+      ),
+    });
+    finished = true;
+  }
+
   function handleLine(line: string, out: CanonicalStreamEvent[]): void {
     if (finished) return;
-    let obj: Obj;
+    let obj: unknown;
     try {
-      obj = JSON.parse(line) as Obj;
+      obj = JSON.parse(line);
     } catch {
-      out.push({
-        type: "error",
-        error: makeCanonicalError(
-          "upstream",
-          "Upstream sent an undecodable stream chunk",
-        ),
-      });
-      finished = true;
+      failUndecodable(out);
       return;
     }
-    handleObject(obj, out);
+    if (typeof obj !== "object" || obj === null || Array.isArray(obj)) {
+      failUndecodable(out);
+      return;
+    }
+    handleObject(obj as Obj, out);
   }
 
   function drain(completed: string[], out: CanonicalStreamEvent[]): void {
@@ -170,8 +192,14 @@ export function createStreamDecoder(
  * wrapper). `message_end` is the `done:true` line with `done_reason`
  * (canonical `tool_call` → "stop", which is what Ollama itself reports
  * for a tool-call answer) and the held usage counts; `error` is one
- * `{"error":"…"}` line. `message_end` and `error` are terminal: any
- * event after them encodes to nothing.
+ * `{"error":"…"}` line. Calls still open when `message_end` arrives
+ * flush in ascending canonical index as `message.tool_calls` lines
+ * just before the `done:true` line (one `logger.warn` naming the
+ * count); before `error` they are dropped — the error is terminal.
+ * A `tool_call_delta`/`tool_call_end` for an index that never had
+ * `tool_call_start` logs a warning instead of dropping silently.
+ * `message_end` and `error` are terminal: any event after them
+ * encodes to nothing.
  */
 export function createStreamEncoder(
   ctx: StreamEncoderContext<OllamaChatRequest>,
@@ -189,6 +217,36 @@ export function createStreamEncoder(
       message,
       done: false,
     });
+  const toolCallLine = (
+    index: number,
+    call: { id: string; name: string; args: string },
+  ): string => {
+    const parsed = parseToolArguments(call.args);
+    if (!parsed.valid) {
+      logger.warn(
+        "Tool call arguments are not valid JSON; sending _invalid_arguments wrapper",
+      );
+    }
+    return chunk({
+      role: "assistant",
+      content: "",
+      tool_calls: [
+        {
+          id: call.id,
+          function: {
+            index,
+            name: call.name,
+            arguments: parsed.args,
+          },
+        },
+      ],
+    });
+  };
+  const warnUnknownIndex = (type: string, index: number): void => {
+    logger.warn(
+      `Ollama stream encoder: ${type} for unknown tool-call index ${index}; dropping`,
+    );
+  };
 
   return {
     contentType: "application/x-ndjson",
@@ -211,40 +269,41 @@ export function createStreamEncoder(
           return "";
         case "tool_call_delta": {
           const call = calls.get(event.index);
-          if (call) call.args += event.argumentsDelta;
+          if (call) {
+            call.args += event.argumentsDelta;
+          } else {
+            warnUnknownIndex(event.type, event.index);
+          }
           return "";
         }
         case "tool_call_end": {
           const call = calls.get(event.index);
-          if (!call) return "";
-          calls.delete(event.index);
-          const parsed = parseToolArguments(call.args);
-          if (!parsed.valid) {
-            logger.warn(
-              "Tool call arguments are not valid JSON; sending _invalid_arguments wrapper",
-            );
+          if (!call) {
+            warnUnknownIndex(event.type, event.index);
+            return "";
           }
-          return chunk({
-            role: "assistant",
-            content: "",
-            tool_calls: [
-              {
-                id: call.id,
-                function: {
-                  index: event.index,
-                  name: call.name,
-                  arguments: parsed.args,
-                },
-              },
-            ],
-          });
+          calls.delete(event.index);
+          return toolCallLine(event.index, call);
         }
         case "usage":
           usage = event.usage;
           return "";
-        case "message_end":
+        case "message_end": {
           finished = true;
-          return line({
+          let out = "";
+          if (calls.size > 0) {
+            logger.warn(
+              `Ollama stream ended with ${calls.size} tool call(s) still open; flushing before done`,
+            );
+            const pending = [...calls.entries()].sort(
+              ([a], [b]) => a - b,
+            );
+            calls.clear();
+            for (const [index, call] of pending) {
+              out += toolCallLine(index, call);
+            }
+          }
+          out += line({
             model: ctx.requestedModel,
             created_at: createdAt,
             message: { role: "assistant", content: "" },
@@ -258,8 +317,16 @@ export function createStreamEncoder(
             eval_count: usage?.outputTokens ?? 0,
             eval_duration: 0,
           });
+          return out;
+        }
         case "error":
           finished = true;
+          if (calls.size > 0) {
+            logger.warn(
+              `Ollama stream ended with ${calls.size} tool call(s) still open; dropping`,
+            );
+            calls.clear();
+          }
           return line(fromCanonicalError(event.error));
       }
     },

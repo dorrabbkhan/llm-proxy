@@ -1,4 +1,13 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+  afterEach,
+  vi,
+} from "vitest";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import OpenAI from "openai";
@@ -13,6 +22,7 @@ import {
 } from "../../src/transformers/adapters";
 import { mapToAnthropicStopReason } from "../../src/transformers/adapters/anthropic.adapter";
 import { reassembleStream } from "../../src/utils/stream-reassemble";
+import { logger } from "../../src/utils/logger";
 import type { CanonicalStreamEvent } from "../../src/types/canonical.types";
 import type { ChatCompletionRequest } from "../../src/types/openai.types";
 import type {
@@ -169,6 +179,16 @@ function ollamaClient(): Ollama {
 }
 
 describe("stream encoders via the provider SDK", () => {
+  beforeEach(() => {
+    // Every case declares the content type it serves — SSE by default,
+    // the ollama cases override to NDJSON — so no case depends on test
+    // order.
+    currentContentType = "text/event-stream";
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it.each(openaiCases)("openai SDK parses encoded %s", async (name) => {
     const fixture = fixtureFor("openai", name);
     currentBody = encodeOpenai(fixture, STREAMING_REQUEST);
@@ -643,6 +663,144 @@ describe("stream encoders via the provider SDK", () => {
         },
       ],
     });
+  });
+
+  it("ollama encoder flushes unended tool calls before done", () => {
+    // A tool_call_start with no matching tool_call_end leaves the call
+    // buffered; at message_end the encoder flushes each in ascending
+    // canonical index order (index 0 started second here) as the same
+    // message.tool_calls line tool_call_end would have produced.
+    const warnSpy = vi.spyOn(logger, "warn");
+    const events: CanonicalStreamEvent[] = [
+      { type: "message_start", id: "call_0", model: "m" },
+      { type: "tool_call_start", index: 1, id: "call_b", name: "get_time" },
+      { type: "tool_call_delta", index: 1, argumentsDelta: '{"tz":"UTC"}' },
+      {
+        type: "tool_call_start",
+        index: 0,
+        id: "call_a",
+        name: "get_weather",
+      },
+      {
+        type: "tool_call_delta",
+        index: 0,
+        argumentsDelta: '{"city":"Paris"}',
+      },
+      {
+        type: "usage",
+        usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
+      },
+      { type: "message_end", finishReason: "tool_call" },
+    ];
+    const out = encodeOllama(events, OLLAMA_STREAMING_REQUEST);
+    const lines = out
+      .split("\n")
+      .filter((l) => l !== "")
+      .map((l) => JSON.parse(l) as Record<string, unknown>);
+
+    expect(lines).toHaveLength(3);
+    expect(lines[0]!.message).toMatchObject({
+      role: "assistant",
+      content: "",
+      tool_calls: [
+        {
+          id: "call_a",
+          function: {
+            index: 0,
+            name: "get_weather",
+            arguments: { city: "Paris" },
+          },
+        },
+      ],
+    });
+    expect(lines[1]!.message).toMatchObject({
+      tool_calls: [
+        {
+          id: "call_b",
+          function: {
+            index: 1,
+            name: "get_time",
+            arguments: { tz: "UTC" },
+          },
+        },
+      ],
+    });
+    expect(lines[2]).toMatchObject({
+      done: true,
+      done_reason: "stop",
+      prompt_eval_count: 10,
+      eval_count: 20,
+    });
+
+    // One warn per stream naming only the count — no names, ids or
+    // arguments.
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const warnMessage = String(warnSpy.mock.calls[0]![0]);
+    expect(warnMessage).toContain("2");
+    expect(warnMessage).not.toContain("call_a");
+    expect(warnMessage).not.toContain("call_b");
+    expect(warnMessage).not.toContain("get_weather");
+    expect(warnMessage).not.toContain("get_time");
+    expect(warnMessage).not.toContain("Paris");
+
+    // Before an error event the buffered calls are dropped instead —
+    // error is terminal.
+    const errOut = encodeOllama(
+      [
+        ...events.slice(0, -1),
+        {
+          type: "error",
+          error: { kind: "upstream", status: 502, message: "boom" },
+        },
+      ],
+      OLLAMA_STREAMING_REQUEST,
+    );
+    expect(errOut).not.toContain("tool_calls");
+    expect(JSON.parse(errOut)).toEqual({ error: "boom" });
+  });
+
+  it("ollama encoder warns on tool event for unknown index", () => {
+    // A tool_call_delta or tool_call_end for an index that never had
+    // tool_call_start is dropped — but not silently.
+    const warnSpy = vi.spyOn(logger, "warn");
+    const encoder = ollamaAdapter.createStreamEncoder({
+      sourceRequest: OLLAMA_STREAMING_REQUEST,
+      query: {},
+      requestedModel: "m",
+    });
+
+    expect(
+      encoder.encode({
+        type: "tool_call_delta",
+        index: 7,
+        argumentsDelta: "{}",
+      }),
+    ).toBe("");
+    expect(encoder.encode({ type: "tool_call_end", index: 7 })).toBe("");
+
+    expect(warnSpy).toHaveBeenCalledTimes(2);
+    expect(String(warnSpy.mock.calls[0]![0])).toContain("tool_call_delta");
+    expect(String(warnSpy.mock.calls[0]![0])).toContain("7");
+    expect(String(warnSpy.mock.calls[1]![0])).toContain("tool_call_end");
+    expect(String(warnSpy.mock.calls[1]![0])).toContain("7");
+
+    // Output is unchanged: the rest of the stream encodes as if the
+    // stray events never arrived.
+    let out = "";
+    out += encoder.encode({ type: "message_start", id: "call_0", model: "m" });
+    out += encoder.encode({ type: "text_delta", text: "hi" });
+    out += encoder.encode({ type: "message_end", finishReason: "stop" });
+    out += encoder.end();
+    const lines = out
+      .split("\n")
+      .filter((l) => l !== "")
+      .map((l) => JSON.parse(l) as Record<string, unknown>);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]!.message).toMatchObject({
+      role: "assistant",
+      content: "hi",
+    });
+    expect(lines[1]).toMatchObject({ done: true, done_reason: "stop" });
   });
 
   it("ollama encoder writes nothing after a terminal event", () => {

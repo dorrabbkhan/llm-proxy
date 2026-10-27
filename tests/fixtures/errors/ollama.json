@@ -1,0 +1,48 @@
+{
+  "source": "https://docs.ollama.com/api/errors (error shape, status semantics, verbatim 500 bodies), https://github.com/ollama/ollama/blob/main/docs/openapi.yaml (ErrorResponse schema and verbatim 413 example); 404 message format verified in Ollama's own source https://github.com/ollama/ollama/blob/main/server/routes.go, read 2026-10-27",
+  "render": {
+    "invalid_request": { "error": "test message" },
+    "authentication": { "error": "test message" },
+    "permission": { "error": "test message" },
+    "not_found": { "error": "test message" },
+    "request_too_large": { "error": "test message" },
+    "rate_limit": { "error": "test message" },
+    "unsupported": { "error": "test message" },
+    "upstream": { "error": "test message" },
+    "unavailable": { "error": "test message" },
+    "timeout": { "error": "test message" },
+    "internal": { "error": "test message" }
+  },
+  "parse": [
+    {
+      "status": 500,
+      "body": { "error": "the model failed to generate a response" },
+      "expectKind": "internal",
+      "expectMessage": "the model failed to generate a response"
+    },
+    {
+      "status": 500,
+      "body": { "error": "an error was encountered while running the model" },
+      "expectKind": "internal",
+      "expectMessage": "an error was encountered while running the model"
+    },
+    {
+      "status": 413,
+      "body": { "error": "text and schema must not exceed 64 KiB" },
+      "expectKind": "request_too_large",
+      "expectMessage": "text and schema must not exceed 64 KiB"
+    },
+    {
+      "status": 404,
+      "body": { "error": "model 'nonexistent:latest' not found" },
+      "expectKind": "not_found",
+      "expectMessage": "model 'nonexistent:latest' not found"
+    },
+    {
+      "status": 429,
+      "body": { "error": "rate limit exceeded" },
+      "expectKind": "rate_limit",
+      "expectMessage": "rate limit exceeded"
+    }
+  ]
+}

@@ -4,11 +4,17 @@ import type {
   CanonicalResponse,
   CanonicalMessage,
   CanonicalContentPart,
+  CanonicalError,
+  CanonicalErrorKind,
   CanonicalImage,
   CanonicalToolCall,
   CanonicalModelList,
   ProviderAdapter,
 } from "../../types/canonical.types";
+import {
+  kindFromStatus,
+  makeCanonicalError,
+} from "../../utils/canonical-error";
 import type {
   ChatCompletionRequest,
   ChatCompletionResponse,
@@ -25,6 +31,8 @@ export const openaiAdapter: ProviderAdapter<
   fromCanonicalResponse,
   toCanonicalModelList,
   fromCanonicalModelList,
+  toCanonicalError,
+  fromCanonicalError,
 };
 
 // ============ REQUEST: OpenAI → Canonical ============
@@ -437,4 +445,43 @@ function mapToOpenaiFinishReason(
     default:
       return "stop";
   }
+}
+
+// ============ ERRORS ============
+
+const OPENAI_ERROR_TYPE: Record<CanonicalErrorKind, string> = {
+  invalid_request: "invalid_request_error",
+  authentication: "authentication_error",
+  permission: "permission_error",
+  not_found: "not_found_error",
+  request_too_large: "invalid_request_error",
+  rate_limit: "rate_limit_error",
+  unsupported: "invalid_request_error",
+  upstream: "api_error",
+  unavailable: "service_unavailable_error",
+  timeout: "api_error",
+  internal: "api_error",
+};
+
+export function toCanonicalError(
+  status: number,
+  body: unknown,
+): CanonicalError {
+  const err = (body as { error?: { message?: unknown } } | null)?.error;
+  const message =
+    typeof err?.message === "string" && err.message.length > 0
+      ? err.message
+      : `Upstream openai returned ${status}`;
+  return makeCanonicalError(kindFromStatus(status), message);
+}
+
+export function fromCanonicalError(err: CanonicalError): unknown {
+  return {
+    error: {
+      message: err.message,
+      type: OPENAI_ERROR_TYPE[err.kind],
+      param: null,
+      code: err.kind,
+    },
+  };
 }

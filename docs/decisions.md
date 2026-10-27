@@ -85,3 +85,55 @@ One entry per decision or per task that deviated from the plan or spec. Newest a
   - `bodyPreview` on the non-JSON-2xx `UpstreamError` is attached only outside production because
     error-handler logs `err.context` in all environments; whether a non-production preview should
     exist at all is left to the owner (spec §3.1 vs Global Constraints privacy).
+
+## v1.0.1 Task 3: CanonicalError and adapter error functions, with fixtures
+
+- Doc sources for the provider error shapes (spec §3.3 table verified against each), read 2026-10-27:
+  - OpenAI: https://developers.openai.com/api/docs/guides/error-codes and
+    https://developers.openai.com/api/docs/guides/rate-limits (type/code values), plus
+    https://github.com/openai/openai-openapi/blob/master/openapi.yaml (ErrorResponse schema and the
+    verbatim `InferenceRateLimited`/`InferenceServiceUnavailable`/404 examples used in the parse fixtures).
+  - Anthropic: https://platform.claude.com/docs/en/api/errors (shape, type table, verbatim not_found
+    example) and https://platform.claude.com/docs/en/api/rate-limits (verbatim rate_limit example); the
+    `model: <id>` not_found message is documented in
+    https://github.com/anthropics/skills/blob/main/skills/claude-api/shared/error-codes.md.
+  - Gemini: https://ai.google.dev/gemini-api/docs/generate-content/api-errors (gRPC error format,
+    status table, verbatim 400 INVALID_ARGUMENT body); the real 429 RESOURCE_EXHAUSTED and 404
+    NOT_FOUND bodies are corroborated in Google's own SDK repo googleapis/python-genai issues #1427
+    and #2087.
+  - Ollama: https://docs.ollama.com/api/errors (shape `{"error": string}` + status semantics,
+    verbatim 500 bodies) and https://github.com/ollama/ollama/blob/main/docs/openapi.yaml
+    (ErrorResponse schema, verbatim 413 example); the 404 `model '<name>' not found` message format is
+    verified in Ollama's own source (server/routes.go).
+- Kind → provider type choices where spec §3.3's table names the provider's type vocabulary but not
+  the kind (recorded per the standing rule; named mappings unchanged):
+  - OpenAI: request_too_large → `invalid_request_error` (OpenAI has no 413-specific documented type);
+    unsupported → `invalid_request_error` (client-side capability problem, like real
+    `unsupported_parameter` errors); upstream → `api_error`; unavailable → `service_unavailable_error`
+    (documented for 503/`server_is_overloaded`); timeout → `api_error`; internal → `api_error`.
+  - Gemini: upstream → `INTERNAL` (UNAVAILABLE is reserved for the `unavailable` kind; 502 is a
+    server-error class, matching gRPC `INTERNAL` for unexpected server failures).
+- Parse-fixture provenance notes: OpenAI docs publish the error schema and per-status type/code/
+  message fields rather than complete JSON bodies for most errors; the verbatim spec examples
+  (slow_down, server_is_overloaded, project_not_found) plus the community-documented real
+  `model_not_found` body were used. For Ollama, docs give the verbatim 500/413 bodies and document
+  404/429 semantics; the 429 message in the fixture follows the documented description.
+- `toCanonicalError` returns `status` = the canonical status for the derived kind (e.g. upstream 529
+  → kind `unavailable`, status 503), matching §3.3's status mapping; Task 4's `toClientError` applies
+  the remaining upstream→client policy on top. Messages pass through from the provider body shape and
+  the fallback is `Upstream <provider> returned <status>`; `toCanonicalError` never throws.
+- `canonical.types.ts` and `canonical.schema.ts` changed together in this commit (CanonicalErrorKind,
+  CanonicalError, ProviderAdapter.to/fromCanonicalError, canonicalErrorSchema) as required.
+- Note: `openai.adapter.ts` already exceeded the ~400-line file guideline on main (440 lines) before
+  this task; the error functions were added to it per the task's Files block rather than split out —
+  a split is a good candidate for a follow-up cleanup.
+- Owner-approved fixes from the PR #3 review (owner decision 2026-10-27):
+  - Anthropic `timeout` kind renders as `timeout_error` (Anthropic's documented 504 type), departing
+    from the spec §3.3 table which grouped it under `api_error`; §3.3's provider table was updated in
+    the same commit.
+  - Gemini `API_KEY_INVALID` in `error.details[]` (`google.rpc.ErrorInfo`) maps to kind
+    `authentication` (status 401). Reason: Gemini rejects a bad key with 400, so without this Task 4's
+    mapping would tell the client its own key is invalid (D1). Task 4's `toClientError` must map from
+    the target adapter's canonical kind, not only the raw status.
+  - `docs/superpowers/specs/2026-10-26-llm-proxy-v1.0.1-design.md` (§3.3 provider table) is outside
+    the task's Files block; edited here to record the owner decision.

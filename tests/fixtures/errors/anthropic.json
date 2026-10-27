@@ -1,0 +1,71 @@
+{
+  "source": "https://platform.claude.com/docs/en/api/errors (error shape and type table incl. the 504 → timeout_error row, verbatim not_found example), https://platform.claude.com/docs/en/api/rate-limits (verbatim rate_limit example), https://github.com/anthropics/skills/blob/main/skills/claude-api/shared/error-codes.md (verbatim invalid_request example and documented 'model: <id>' not_found message), read 2026-10-27",
+  "render": {
+    "invalid_request": { "type": "error", "error": { "type": "invalid_request_error", "message": "test message" } },
+    "authentication": { "type": "error", "error": { "type": "authentication_error", "message": "test message" } },
+    "permission": { "type": "error", "error": { "type": "permission_error", "message": "test message" } },
+    "not_found": { "type": "error", "error": { "type": "not_found_error", "message": "test message" } },
+    "request_too_large": { "type": "error", "error": { "type": "request_too_large", "message": "test message" } },
+    "rate_limit": { "type": "error", "error": { "type": "rate_limit_error", "message": "test message" } },
+    "unsupported": { "type": "error", "error": { "type": "api_error", "message": "test message" } },
+    "upstream": { "type": "error", "error": { "type": "api_error", "message": "test message" } },
+    "unavailable": { "type": "error", "error": { "type": "overloaded_error", "message": "test message" } },
+    "timeout": { "type": "error", "error": { "type": "timeout_error", "message": "test message" } },
+    "internal": { "type": "error", "error": { "type": "api_error", "message": "test message" } }
+  },
+  "parse": [
+    {
+      "status": 404,
+      "body": {
+        "type": "error",
+        "error": {
+          "type": "not_found_error",
+          "message": "The requested resource could not be found."
+        },
+        "request_id": "req_011CSHoEeqs5C35K2UUqR7Fy"
+      },
+      "expectKind": "not_found",
+      "expectMessage": "The requested resource could not be found."
+    },
+    {
+      "status": 404,
+      "body": {
+        "type": "error",
+        "error": {
+          "type": "not_found_error",
+          "message": "model: claude-nonexistent-4"
+        },
+        "request_id": "req_011CSHoEeqs5C35K2UUqR7Fy"
+      },
+      "expectKind": "not_found",
+      "expectMessage": "model: claude-nonexistent-4"
+    },
+    {
+      "status": 429,
+      "body": {
+        "type": "error",
+        "error": {
+          "type": "rate_limit_error",
+          "message": "You have reached your API usage limits: your organization has crossed its monthly API usage threshold, set based on your organization's API tier. You will regain access on 2026-09-01 at 00:00 UTC.",
+          "details": { "error_code": "enforced_spend_limit_reached" }
+        },
+        "request_id": "req_018EeWyXxfu5pfWkrYcMdjWG"
+      },
+      "expectKind": "rate_limit",
+      "expectMessage": "You have reached your API usage limits: your organization has crossed its monthly API usage threshold, set based on your organization's API tier. You will regain access on 2026-09-01 at 00:00 UTC."
+    },
+    {
+      "status": 400,
+      "body": {
+        "type": "error",
+        "error": {
+          "type": "invalid_request_error",
+          "message": "messages: roles must alternate between \"user\" and \"assistant\""
+        },
+        "request_id": "req_011CSHoEeqs5C35K2UUqR7Fy"
+      },
+      "expectKind": "invalid_request",
+      "expectMessage": "messages: roles must alternate between \"user\" and \"assistant\""
+    }
+  ]
+}

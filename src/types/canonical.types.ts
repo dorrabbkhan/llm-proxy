@@ -168,6 +168,32 @@ export interface CanonicalDelta {
   toolCalls?: Partial<CanonicalToolCall>[];
 }
 
+// ============ ERRORS ============
+
+export type CanonicalErrorKind =
+  | "invalid_request" // 400
+  | "authentication" // 401
+  | "permission" // 403
+  | "not_found" // 404
+  | "request_too_large" // 413
+  | "rate_limit" // 429
+  | "unsupported" // 501
+  | "upstream" // 502
+  | "unavailable" // 503
+  | "timeout" // 504
+  | "internal"; // 500
+
+export interface CanonicalError {
+  /** Error category */
+  kind: CanonicalErrorKind;
+  /** HTTP status sent to the client */
+  status: number;
+  /** Human-readable; never contains prompt text or keys */
+  message: string;
+  /** Seconds to wait before retrying (from upstream Retry-After) */
+  retryAfterSeconds?: number;
+}
+
 // ============ MODEL LIST ============
 
 export interface CanonicalModel {
@@ -200,4 +226,8 @@ export interface ProviderAdapter<TRequest, TResponse> {
   toCanonicalModelList(response: unknown): CanonicalModelList;
   /** Convert canonical model list to provider format */
   fromCanonicalModelList(models: CanonicalModelList): unknown;
+  /** Read a provider error body (never throws on unrecognised bodies) */
+  toCanonicalError(status: number, body: unknown): CanonicalError;
+  /** Render a canonical error in the provider's dialect */
+  fromCanonicalError(err: CanonicalError): unknown;
 }

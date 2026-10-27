@@ -4,9 +4,14 @@ import type {
   CanonicalResponse,
   CanonicalMessage,
   CanonicalContentPart,
+  CanonicalError,
   CanonicalModelList,
   ProviderAdapter,
 } from "../../types/canonical.types";
+import {
+  kindFromStatus,
+  makeCanonicalError,
+} from "../../utils/canonical-error";
 import type {
   OllamaChatRequest,
   OllamaChatResponse,
@@ -23,6 +28,8 @@ export const ollamaAdapter: ProviderAdapter<
   fromCanonicalResponse,
   toCanonicalModelList,
   fromCanonicalModelList,
+  toCanonicalError,
+  fromCanonicalError,
 };
 
 // ============ REQUEST: Ollama → Canonical ============
@@ -251,4 +258,22 @@ export function fromCanonicalModelList(
         : undefined,
     })),
   };
+}
+
+// ============ ERRORS ============
+
+export function toCanonicalError(
+  status: number,
+  body: unknown,
+): CanonicalError {
+  const err = (body as { error?: unknown } | null)?.error;
+  const message =
+    typeof err === "string" && err.length > 0
+      ? err
+      : `Upstream ollama returned ${status}`;
+  return makeCanonicalError(kindFromStatus(status), message);
+}
+
+export function fromCanonicalError(err: CanonicalError): unknown {
+  return { error: err.message };
 }

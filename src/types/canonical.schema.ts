@@ -114,6 +114,29 @@ export const canonicalStreamChunkSchema = z.object({
   usage: canonicalUsageSchema.optional(),
 });
 
+// ============ ERRORS ============
+
+export const canonicalErrorKindSchema = z.enum([
+  "invalid_request",
+  "authentication",
+  "permission",
+  "not_found",
+  "request_too_large",
+  "rate_limit",
+  "unsupported",
+  "upstream",
+  "unavailable",
+  "timeout",
+  "internal",
+]);
+
+export const canonicalErrorSchema = z.object({
+  kind: canonicalErrorKindSchema,
+  status: z.number().int(),
+  message: z.string(),
+  retryAfterSeconds: z.number().optional(),
+});
+
 // ============ MODEL LIST ============
 
 export const canonicalModelSchema = z.object({

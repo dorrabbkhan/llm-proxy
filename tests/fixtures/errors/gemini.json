@@ -1,0 +1,78 @@
+{
+  "source": "https://ai.google.dev/gemini-api/docs/generate-content/api-errors (error format and verbatim 400 INVALID_ARGUMENT body); real upstream bodies corroborated in Google's own SDK repository googleapis/python-genai issues #2087 (404 NOT_FOUND) and #1427 (429 RESOURCE_EXHAUSTED), read 2026-10-27",
+  "render": {
+    "invalid_request": { "error": { "code": 400, "message": "test message", "status": "INVALID_ARGUMENT" } },
+    "authentication": { "error": { "code": 401, "message": "test message", "status": "UNAUTHENTICATED" } },
+    "permission": { "error": { "code": 403, "message": "test message", "status": "PERMISSION_DENIED" } },
+    "not_found": { "error": { "code": 404, "message": "test message", "status": "NOT_FOUND" } },
+    "request_too_large": { "error": { "code": 413, "message": "test message", "status": "RESOURCE_EXHAUSTED" } },
+    "rate_limit": { "error": { "code": 429, "message": "test message", "status": "RESOURCE_EXHAUSTED" } },
+    "unsupported": { "error": { "code": 501, "message": "test message", "status": "UNIMPLEMENTED" } },
+    "upstream": { "error": { "code": 502, "message": "test message", "status": "INTERNAL" } },
+    "unavailable": { "error": { "code": 503, "message": "test message", "status": "UNAVAILABLE" } },
+    "timeout": { "error": { "code": 504, "message": "test message", "status": "DEADLINE_EXCEEDED" } },
+    "internal": { "error": { "code": 500, "message": "test message", "status": "INTERNAL" } }
+  },
+  "parse": [
+    {
+      "status": 400,
+      "body": {
+        "error": {
+          "code": 400,
+          "message": "API key not valid. Please pass a valid API key.",
+          "status": "INVALID_ARGUMENT",
+          "details": [
+            {
+              "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+              "reason": "API_KEY_INVALID",
+              "domain": "googleapis.com",
+              "metadata": { "service": "generativelanguage.googleapis.com" }
+            },
+            {
+              "@type": "type.googleapis.com/google.rpc.LocalizedMessage",
+              "locale": "en-US",
+              "message": "API key not valid. Please pass a valid API key."
+            }
+          ]
+        }
+      },
+      "expectKind": "authentication",
+      "expectMessage": "API key not valid. Please pass a valid API key."
+    },
+    {
+      "status": 429,
+      "body": {
+        "error": {
+          "code": 429,
+          "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits.",
+          "status": "RESOURCE_EXHAUSTED",
+          "details": [
+            {
+              "@type": "type.googleapis.com/google.rpc.Help",
+              "links": [
+                {
+                  "description": "Learn more about Gemini API quotas",
+                  "url": "https://ai.google.dev/gemini-api/docs/rate-limits"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expectKind": "rate_limit",
+      "expectMessage": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits."
+    },
+    {
+      "status": 404,
+      "body": {
+        "error": {
+          "code": 404,
+          "message": "This model models/gemini-2.0-flash is no longer available to new users. Please update your code to use a newer model for the latest features and improvements.",
+          "status": "NOT_FOUND"
+        }
+      },
+      "expectKind": "not_found",
+      "expectMessage": "This model models/gemini-2.0-flash is no longer available to new users. Please update your code to use a newer model for the latest features and improvements."
+    }
+  ]
+}

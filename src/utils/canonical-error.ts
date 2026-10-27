@@ -62,3 +62,20 @@ export function makeCanonicalError(
     ...(retryAfterSeconds !== undefined && { retryAfterSeconds }),
   };
 }
+
+/**
+ * Parse an upstream `Retry-After` header into whole seconds.
+ * delta-seconds pass through; an HTTP-date becomes seconds from `now`
+ * (minimum 1); anything unrecognised is dropped.
+ */
+export function parseRetryAfter(
+  header: string | null,
+  now: Date = new Date(),
+): number | undefined {
+  if (!header) return undefined;
+  const trimmed = header.trim();
+  if (/^\d+$/.test(trimmed)) return parseInt(trimmed, 10);
+  const date = Date.parse(trimmed);
+  if (Number.isNaN(date)) return undefined;
+  return Math.max(1, Math.ceil((date - now.getTime()) / 1000));
+}

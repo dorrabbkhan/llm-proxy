@@ -1,3 +1,6 @@
+import type { CanonicalError } from "../types/canonical.types";
+import { kindFromStatus, makeCanonicalError } from "./canonical-error";
+
 export class ProxyError extends Error {
   constructor(
     message: string,
@@ -8,6 +11,11 @@ export class ProxyError extends Error {
     super(message);
     this.name = this.constructor.name;
     Error.captureStackTrace(this, this.constructor);
+  }
+
+  /** Canonical form used to render this error in the client's dialect. */
+  toCanonical(): CanonicalError {
+    return makeCanonicalError(kindFromStatus(this.statusCode), this.message);
   }
 
   toJSON() {
@@ -37,6 +45,14 @@ export class TransformError extends ProxyError {
 }
 
 export class UpstreamError extends ProxyError {
+  /**
+   * Client-facing rendering computed by proxy.service's upstream mapping
+   * (spec §3.3). When set it wins over the default status-derived kind.
+   */
+  public clientError?: CanonicalError;
+  /** Seconds from the upstream Retry-After header (set on 429/503). */
+  public retryAfterSeconds?: number;
+
   constructor(
     message: string,
     public readonly upstreamStatus?: number,
@@ -44,11 +60,17 @@ export class UpstreamError extends ProxyError {
     context?: Record<string, unknown>,
     statusCode: number = 502,
   ) {
+    // upstreamBody stays a field (for the §3.3 log summary) but is kept
+    // out of `context`: context is serialized into non-production
+    // `details` and an upstream body may echo keys or completion text.
     super(message, statusCode, "UPSTREAM_ERROR", {
       ...context,
       upstreamStatus,
-      upstreamBody,
     });
+  }
+
+  toCanonical(): CanonicalError {
+    return this.clientError ?? super.toCanonical();
   }
 }
 

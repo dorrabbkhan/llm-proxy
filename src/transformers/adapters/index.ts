@@ -107,6 +107,21 @@ export const PROVIDER_ROUTES: Record<Provider, ProviderRoute[]> = {
 };
 
 /**
+ * Match an incoming request to a route on the given source provider
+ * (method + path prefix). Used by resolve-source middleware and
+ * proxy.service.
+ */
+export function findSourceRoute(
+  source: Provider,
+  method: string,
+  path: string,
+): ProviderRoute | undefined {
+  return PROVIDER_ROUTES[source].find(
+    (r) => r.method === method && path.startsWith(r.pathPrefix),
+  );
+}
+
+/**
  * Back-compat view of the chat routes — chat endpoint per provider.
  * Prefer PROVIDER_ROUTES for new code.
  */

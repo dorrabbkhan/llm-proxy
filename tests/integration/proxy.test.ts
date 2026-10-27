@@ -324,8 +324,16 @@ describe("Error handling", () => {
       .send(openaiFixtures.requests.basic);
 
     expect(res.status).toBe(502);
-    expect(res.body.error.code).toBe("UPSTREAM_ERROR");
-    expect(res.body.error.message).toContain("500");
+    // §3.3: upstream 5xx renders in the client's dialect — the upstream
+    // message passes through for non-auth failures.
+    expect(res.body).toEqual({
+      error: {
+        message: "upstream exploded",
+        type: "api_error",
+        param: null,
+        code: "upstream",
+      },
+    });
   });
 
   it("returns 502 for upstream 401", async () => {
@@ -341,7 +349,16 @@ describe("Error handling", () => {
       .send(openaiFixtures.requests.basic);
 
     expect(res.status).toBe(502);
-    expect(res.body.error.code).toBe("UPSTREAM_ERROR");
+    // §3.3/D1: the upstream rejected the proxy's credentials — the client
+    // gets the credentials message, never the upstream's own message.
+    expect(res.body).toEqual({
+      error: {
+        message: "Upstream gemini rejected the proxy's credentials (401)",
+        type: "api_error",
+        param: null,
+        code: "upstream",
+      },
+    });
   });
 
   it("returns 404 for unmapped paths", async () => {

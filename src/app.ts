@@ -1,5 +1,6 @@
 import express from "express";
 import { requestLogger } from "./middleware/request-logger";
+import { resolveSource } from "./middleware/resolve-source";
 import { errorHandler } from "./middleware/error-handler";
 import { requireApiKey } from "./middleware/require-api-key";
 import { proxyRouter } from "./routes/proxy";
@@ -8,6 +9,11 @@ const app = express();
 
 // 1. Request logger - logs every incoming request
 app.use(requestLogger);
+
+// 1a. Source resolver - records res.locals.sourceApi on provider paths so
+// the error handler renders errors (auth, body-parser, upstream) in the
+// client's own dialect.
+app.use(resolveSource());
 
 // 2. Body parser - parses application/json. LLM payloads (base64
 // images, long context) routinely exceed the 100kb default.

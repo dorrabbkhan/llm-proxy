@@ -1,4 +1,5 @@
 import { UpstreamError } from "../utils/errors";
+import { parseRetryAfter } from "../utils/canonical-error";
 import { logger } from "../utils/logger";
 
 export interface UpstreamRequestOptions {
@@ -15,6 +16,8 @@ export interface UpstreamResponse {
   body: unknown;
   durationMs: number;
   contentType?: string;
+  /** Whole seconds from the upstream Retry-After header, when present */
+  retryAfterSeconds?: number;
 }
 
 /** Retry only these upstream statuses — upstream rejected before processing */
@@ -82,6 +85,9 @@ export async function requestJson(
 
       const durationMs = Date.now() - start;
       const contentType = res.headers.get("content-type") ?? "unknown";
+      const retryAfterSeconds = parseRetryAfter(
+        res.headers.get("retry-after"),
+      );
       const text = await res.text();
       let parsed: unknown = null;
       let parseFailed = false;
@@ -108,12 +114,14 @@ export async function requestJson(
           await sleep(backoffMs(attempt));
           continue;
         }
-        throw new UpstreamError(
+        const error = new UpstreamError(
           `Upstream rejected request after ${maxAttempts} attempts`,
           res.status,
           parsed,
           { requestId, url, attempts: maxAttempts },
         );
+        error.retryAfterSeconds = retryAfterSeconds;
+        throw error;
       }
 
       // A 2xx that isn't valid JSON is an upstream failure (e.g. Ollama
@@ -140,6 +148,7 @@ export async function requestJson(
         body: parseFailed ? null : parsed,
         durationMs,
         contentType,
+        ...(retryAfterSeconds !== undefined && { retryAfterSeconds }),
       };
     } catch (err) {
       // Our own UpstreamErrors (non-JSON 2xx, retries exhausted) propagate.

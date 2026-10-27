@@ -476,3 +476,54 @@ One line each; details in the task entries above. Task PRs: 1→#1, 2→#2,
   are inside the created `tests/fixtures/streams/` tree, which the Files block
   covers as `<case>.{sse|ndjson}` plus `<case>.json`; the extra twin files are
   recorded provenance for the embedded `nonStreaming` bodies).
+
+## v1.1 Task 3b: recorded stream fixtures
+
+- Owner-requested follow-up to Task 3: record the missing cases live instead of
+  relying on published captures. `scripts/record-streams.ts` now supports all
+  four providers (gated on `OPENAI_API_KEY`/`ANTHROPIC_API_KEY`/`GEMINI_API_KEY`;
+  base URLs from `<PROVIDER>_API_BASE_URL`, public defaults otherwise; model
+  overrides `RECORD_OPENAI_MODEL`/`RECORD_ANTHROPIC_MODEL`/`RECORD_GEMINI_MODEL`/
+  `RECORD_OLLAMA_MODEL`). `RECORD_PROVIDERS` and `RECORD_CASES` filter the run;
+  existing files are never overwritten unless `RECORD_OVERWRITE=1`.
+- `expectedEvents` are generated programmatically from the recorded bytes by
+  `scripts/stream-fixture-decode.ts` (verified: it reproduces every existing
+  fixture's expectedEvents exactly). Anything the Task 3 conventions don't
+  cover throws and prints `STOP:` instead of guessing.
+- Recorded this run (2026-10-27):
+  - `ollama/error` — qwen2.5:0.5b, ollama 0.40.11. A real mid-stream error:
+    HTTP 200, normal NDJSON chunks, then `{"error":"an error was encountered
+    while running the model: unexpected EOF"}` (docs.ollama.com/api/errors
+    shape). Trigger: the llama runner was stopped mid-generation
+    (`OLLAMA_MIDSTREAM_KILL`, default `docker exec ollama pkill -f
+    llama-server`). The wire carries no status/code; the canonical error is
+    `internal`/`500` — the same failure returned pre-stream would be an HTTP
+    500, so `kindFromStatus(500)` applies.
+  - `gemini/max_tokens` — gemini-3.5-flash-lite (`RECORD_GEMINI_MODEL`;
+    the script default `gemini-2.5-flash` now returns 404 "no longer
+    available to new users" on this API key). `finishReason: MAX_TOKENS`
+    mid-stream → canonical `length`. The `nonStreaming` twin matched on
+    message/finishReason/usage and is embedded.
+- Still omitted (recorded evidence impossible this run):
+  - `openai`: `parallel_tool_calls`, `after_tool_result`, `max_tokens`,
+    `error` — the key is set but the account has no credit: every case got a
+    pre-stream HTTP 429 (`credit_balance_exhausted`), which is the normal
+    JSON-error path, not a stream fixture.
+  - `anthropic`: `parallel_tool_calls`, `after_tool_result`, `max_tokens` —
+    same: pre-stream HTTP 400 (credit balance too low).
+  - `gemini/error`, `openai/error` — no deterministic way to make either
+    provider send an in-stream `{"error":…}` on a 2xx stream is known; every
+    error trigger probed (invalid tool configs, unsupported modalities,
+    exhausted quota) returned a pre-stream non-2xx. The script defines no
+    `error` case for them; fabricating or splicing bytes is not allowed.
+- Provenance note: `message_start`/`tool_call_start` keep the provider's
+  response-object IDs verbatim (`chatcmpl-…`, `msg_…`, `responseId`), as the
+  existing fixtures do. Only response bodies are recorded — no request
+  headers, API keys, org IDs or `request_id`/`x-request-id` values enter the
+  files.
+- Files outside the Files block: `scripts/record-streams.ts` extended for
+  openai/anthropic/gemini (owner-requested follow-up); split for the ~400-line
+  rule into `scripts/record-streams-cases.ts` (per-provider endpoints and case
+  definitions) and `scripts/stream-fixture-decode.ts` +
+  `scripts/stream-fixture-events.ts` (wire bytes → `expectedEvents` /
+  `nonStreaming` matching).

@@ -9,22 +9,41 @@ import type {
   CanonicalFinishReason,
   ProviderAdapter,
   CanonicalModelList,
+  IdGenerator,
 } from "../../types/canonical.types";
 import {
   kindFromStatus,
   makeCanonicalError,
 } from "../../utils/canonical-error";
+import { ValidationError } from "../../utils/errors";
+import { createIdGenerator } from "../../utils/ids";
 import type {
   Content,
   GenerateContentRequest,
   GenerateContentResponse,
   Part,
   GeminiRole,
+  GeminiToolConfig,
 } from "../../types/gemini.types";
 import {
   createStreamDecoder,
   createStreamEncoder,
 } from "./gemini.stream";
+import {
+  appendFunctionResponsePart,
+  functionCallPart,
+  functionResponsePart,
+  isFunctionCallPart,
+  isFunctionResponsePart,
+  recordCallId,
+  toCanonicalToolCalls,
+  toCanonicalToolChoice,
+  toCanonicalToolMessages,
+  toCanonicalTools,
+  toGeminiToolConfig,
+  toGeminiTools,
+} from "./gemini.tools";
+import type { PendingCallIds } from "./gemini.tools";
 
 /**
  * Gemini FinishReason values — duplicated locally so the SDK stays a
@@ -71,6 +90,9 @@ export function toCanonicalRequest(
 ): CanonicalRequest {
   const messages: CanonicalMessage[] = [];
   let systemPrompt: string | undefined;
+  const ids = createIdGenerator();
+  // pending call ids per function name, for matching functionResponses
+  const pendingCalls: PendingCallIds = new Map();
 
   // Extract system instruction
   if (request.systemInstruction) {
@@ -79,10 +101,34 @@ export function toCanonicalRequest(
 
   // Convert contents to messages
   for (const content of request.contents) {
-    messages.push({
-      role: content.role === "model" ? "assistant" : "user",
-      content: extractContentParts(content),
-    });
+    const parts = content.parts ?? [];
+    const otherParts = parts.filter((p) => !isFunctionResponsePart(p));
+
+    if (content.role === "model") {
+      const toolCalls = toCanonicalToolCalls(otherParts, ids);
+      for (const call of toolCalls) {
+        recordCallId(pendingCalls, call.function.name, call.id);
+      }
+      messages.push({
+        role: "assistant",
+        content: extractContentParts({
+          role: content.role,
+          parts: otherParts.filter((p) => !isFunctionCallPart(p)),
+        }),
+        ...(toolCalls.length > 0 && { toolCalls }),
+      });
+    } else {
+      messages.push(...toCanonicalToolMessages(parts, pendingCalls));
+      if (otherParts.length > 0) {
+        messages.push({
+          role: "user",
+          content: extractContentParts({
+            role: content.role,
+            parts: otherParts,
+          }),
+        });
+      }
+    }
   }
 
   const result: CanonicalRequest = {
@@ -90,6 +136,20 @@ export function toCanonicalRequest(
     messages,
     ...(systemPrompt && { systemPrompt }),
   };
+
+  // Convert tool definitions
+  const tools = toCanonicalTools(request.tools);
+  if (tools) {
+    result.tools = tools;
+  }
+
+  // Convert tool config
+  const toolChoice = toCanonicalToolChoice(
+    request.toolConfig as GeminiToolConfig | undefined,
+  );
+  if (toolChoice !== undefined) {
+    result.toolChoice = toolChoice;
+  }
 
   // Convert generation config
   if (request.generationConfig) {
@@ -172,16 +232,62 @@ function extractContentParts(
 export function fromCanonicalRequest(
   request: CanonicalRequest,
 ): GenerateContentRequest {
-  const contents: Content[] = request.messages
-    .filter((m) => m.role !== "system")
-    .map((m) => ({
-      role: mapRoleToGemini(m.role),
-      parts: convertToParts(m.content),
-    }));
+  // toolCallId → function name, resolved from earlier assistant messages
+  const callNames = new Map<string, string>();
+  const contents: Content[] = [];
+
+  for (const m of request.messages) {
+    if (m.role === "system") continue;
+    if (m.role === "assistant") {
+      const calls = m.toolCalls ?? [];
+      let parts = convertToParts(m.content);
+      for (const call of calls) {
+        callNames.set(call.id, call.function.name);
+      }
+      if (calls.length > 0) {
+        parts = parts.filter(
+          (p) => !("text" in p && p.text === ""),
+        );
+        parts.push(...calls.map(functionCallPart));
+      }
+      contents.push({ role: "model", parts });
+    } else if (m.role === "tool") {
+      const name = m.toolCallId
+        ? callNames.get(m.toolCallId)
+        : undefined;
+      if (!name) {
+        throw new ValidationError(
+          `Tool result "${m.toolCallId ?? ""}" has no matching assistant tool call`,
+        );
+      }
+      appendFunctionResponsePart(
+        contents,
+        functionResponsePart(name, m.content),
+      );
+    } else {
+      contents.push({
+        role: mapRoleToGemini(m.role),
+        parts: convertToParts(m.content),
+      });
+    }
+  }
 
   const result: GenerateContentRequest = {
     contents,
   };
+
+  // Tool definitions; parameters filtered to Google's documented
+  // schema subset (spec §3.4)
+  const tools = toGeminiTools(request.tools);
+  if (tools) {
+    result.tools = tools;
+  }
+
+  // Tool choice → functionCallingConfig
+  const toolConfig = toGeminiToolConfig(request.toolChoice);
+  if (toolConfig) {
+    result.toolConfig = toolConfig;
+  }
 
   // Add system instruction
   const systemMsg = request.messages.find((m) => m.role === "system");
@@ -245,21 +351,30 @@ function convertToParts(content: string | CanonicalContentPart[]): Part[] {
 export function toCanonicalResponse(
   response: GenerateContentResponse,
   model: string,
+  ids: IdGenerator = createIdGenerator(),
 ): CanonicalResponse {
   const candidate = response.candidates?.[0];
   const content = candidate?.content;
-  const textPart = content?.parts?.find(
-    (p): p is { text: string } => "text" in p,
-  );
+  const parts = content?.parts ?? [];
+
+  const text = parts
+    .filter((p): p is { text: string } => "text" in p)
+    .map((p) => p.text)
+    .join("");
+  const toolCalls = toCanonicalToolCalls(parts, ids);
 
   return {
     id: `gemini-${randomUUID()}`,
     model,
     message: {
       role: "assistant",
-      content: textPart?.text ?? "",
+      content: text,
+      ...(toolCalls.length > 0 && { toolCalls }),
     },
-    finishReason: mapFinishReason(candidate?.finishReason),
+    finishReason:
+      toolCalls.length > 0
+        ? "tool_call"
+        : mapFinishReason(candidate?.finishReason),
     usage: response.usageMetadata
       ? {
           inputTokens: response.usageMetadata.promptTokenCount ?? 0,
@@ -307,13 +422,18 @@ export function fromCanonicalResponse(
     typeof response.message.content === "string"
       ? response.message.content
       : "";
+  const toolCalls = response.message.toolCalls ?? [];
+  const parts: Part[] =
+    toolCalls.length > 0 && content === ""
+      ? toolCalls.map(functionCallPart)
+      : [{ text: content }, ...toolCalls.map(functionCallPart)];
 
   return {
     candidates: [
       {
         content: {
           role: "model",
-          parts: [{ text: content }],
+          parts,
         },
         finishReason: mapToGeminiFinishReason(
           response.finishReason,

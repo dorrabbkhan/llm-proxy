@@ -13,6 +13,8 @@ export interface Config {
   targetBaseUrl: string;
   upstreamTimeoutMs: number;
   upstreamRetries: number;
+  /** Longest gap allowed between chunks mid-stream (spec §3.2) */
+  upstreamStreamIdleMs: number;
   /** Client-facing auth key — unset means auth disabled */
   proxyApiKey?: string;
 }
@@ -86,6 +88,9 @@ export function loadConfig(): Config {
     upstreamRetries: process.env.UPSTREAM_RETRIES
       ? parseInt(process.env.UPSTREAM_RETRIES, 10)
       : 1,
+    upstreamStreamIdleMs: process.env.UPSTREAM_STREAM_IDLE_MS
+      ? parseInt(process.env.UPSTREAM_STREAM_IDLE_MS, 10)
+      : 300_000,
     proxyApiKey: process.env.PROXY_API_KEY || undefined,
   };
 }

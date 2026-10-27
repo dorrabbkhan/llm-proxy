@@ -7,24 +7,22 @@ import type {
   CanonicalError,
   CanonicalErrorKind,
   CanonicalImage,
-  CanonicalToolCall,
   CanonicalModelList,
   ProviderAdapter,
-  StreamDecoder,
-  StreamEncoder,
-  StreamEncoderContext,
-  IdGenerator,
 } from "../../types/canonical.types";
 import {
   kindFromStatus,
   makeCanonicalError,
 } from "../../utils/canonical-error";
-import { NotSupportedError } from "../../utils/errors";
 import type {
   ChatCompletionRequest,
   ChatCompletionResponse,
   ChatCompletionMessageParam,
 } from "../../types/openai.types";
+import {
+  createStreamDecoder,
+  createStreamEncoder,
+} from "./openai.stream";
 
 export const openaiAdapter: ProviderAdapter<
   ChatCompletionRequest,
@@ -212,6 +210,11 @@ export function fromCanonicalRequest(
 
   if (request.stream !== undefined) {
     (result as { stream?: boolean }).stream = request.stream;
+  }
+  if (request.stream === true) {
+    // Ask the upstream for a final usage chunk (spec §3.2).
+    (result as { stream_options?: { include_usage: boolean } })
+      .stream_options = { include_usage: true };
   }
 
   return result;
@@ -437,7 +440,7 @@ export function fromCanonicalModelList(
   };
 }
 
-function mapToOpenaiFinishReason(
+export function mapToOpenaiFinishReason(
   reason: CanonicalResponse["finishReason"],
 ): "stop" | "length" | "tool_calls" | "content_filter" {
   switch (reason) {
@@ -493,21 +496,4 @@ export function fromCanonicalError(err: CanonicalError): unknown {
   };
 }
 
-// ============ STREAMING (stub — Task 4) ============
-
-export function createStreamDecoder(
-  _model: string,
-  _ids?: IdGenerator,
-): StreamDecoder {
-  throw new NotSupportedError(
-    'Streaming is not supported yet (planned for v1.1). Send "stream": false.',
-  );
-}
-
-export function createStreamEncoder(
-  _ctx: StreamEncoderContext<ChatCompletionRequest>,
-): StreamEncoder {
-  throw new NotSupportedError(
-    'Streaming is not supported yet (planned for v1.1). Send "stream": false.',
-  );
-}
+// Streaming lives in ./openai.stream — re-exported on the adapter above.

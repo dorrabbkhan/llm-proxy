@@ -584,3 +584,40 @@ One line each; details in the task entries above. Task PRs: 1→#1, 2→#2,
   `scripts/record-streams-cases.ts` were already declared in the Task 3b
   entry; the `date` parameter they no longer use was removed from the three
   provider setups and `providerSetups`.
+
+## v1.1 Task 4: postStream, streaming pipeline, route, OpenAI decoder/encoder
+
+- Spec sections implemented: §3.2 (pipeline, postStream, idle timeout,
+  client-disconnect abort, in-stream errors, completion log), §3.3 OpenAI row
+  (decoder/encoder, usage chunk gated on `stream_options.include_usage`,
+  `data: {"error":…}` + `data: [DONE]`).
+- Files outside the Files block: `.env.example` (documents the new
+  `UPSTREAM_STREAM_IDLE_MS` env var) and `tests/integration/errors.test.ts`
+  (Step 1 names the replacement — the openai→openai `stream:true` 501 case is
+  now covered by `stream.test.ts`; kept listed here because the Files block's
+  Modify list omits it).
+- Fix round 1 added `src/services/stream-pipeline.test.ts` (new — the
+  prescribed unit test pinning "nothing is encoded after a terminal event";
+  the Files block has no pipeline test file) and modified
+  `src/services/http-client.test.ts` (postStream unit tests: the msw layer
+  can't observe an undici body abort, so the headers-only timeout is pinned
+  by stubbing `fetch` and asserting the signal stays un-aborted once headers
+  resolve). Both are test files for code inside the block.
+- The OpenAI decoder parses `data:` lines individually rather than via strict
+  SSE block dispatch: the recorded `tool_call.sse` fixture (openai-go stream
+  capture) carries bare `data:` lines with no blank-line separators, and every
+  OpenAI `data:` line is a complete JSON payload anyway. Comment/`event:`/
+  blank lines are ignored. A stream that ends without `[DONE]` (or with a
+  chunk that fails JSON.parse) ends in an `error` event, per §3.2.
+- `stream-sdk.test.ts` serves the encoded bytes over a real loopback
+  `http.createServer` instead of msw: the OpenAI SDK cancels the response
+  reader when it sees `[DONE]`, and that cancellation never resolves on msw's
+  synthetic response stream (iteration hangs). Loopback only — no external
+  network in `npm test`.
+- `stream-decoders.test.ts` runs "every split point" verbatim for fixtures ≤
+  4 KB (the plan's bound) and a deterministic ~150-point sample for larger
+  recordings — `openai/tool_call.sse` is 74 KB, so an exhaustive split loop
+  would be quadratic in decode time.
+- Pre-headers non-2xx in `postStream` throws an `UpstreamError` carrying the
+  upstream status and parsed body, so proxy.service's `toClientFacing` renders
+  exactly the same client error as the JSON path.

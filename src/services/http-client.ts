@@ -197,3 +197,152 @@ export function getJson(
 ): Promise<UpstreamResponse> {
   return requestJson("GET", opts);
 }
+
+export interface UpstreamStreamResponse {
+  status: number;
+  body: ReadableStream<Uint8Array>;
+  durationMs: number;
+}
+
+/**
+ * POST that resolves as soon as response headers arrive, leaving the body
+ * as a ReadableStream for the streaming pipeline (spec §3.2).
+ *
+ * Non-2xx: the body is read as JSON (null when it isn't) and the same
+ * UpstreamError the JSON path produces is thrown — proxy.service maps it
+ * to the client's dialect identically. `timeoutMs` covers connect +
+ * headers only; inter-chunk gaps are the pipeline's idle timeout.
+ * Retries match requestJson (transport failures, 429/503) and can only
+ * ever happen before headers — the stream body is never retried.
+ * `signal` aborts the upstream request (client disconnect).
+ */
+export async function postStream(
+  opts: UpstreamRequestOptions & { signal?: AbortSignal },
+): Promise<UpstreamStreamResponse> {
+  const {
+    url,
+    headers,
+    body,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    retries = DEFAULT_RETRIES,
+    requestId,
+    signal,
+  } = opts;
+
+  const maxAttempts = retries + 1;
+  let lastError: UpstreamError | null = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const start = Date.now();
+    try {
+      // timeoutMs bounds connect + response headers only (spec §3.2):
+      // a header-phase AbortController whose timer is cleared the
+      // moment fetch resolves, so nothing bounds the body except the
+      // pipeline's idle timeout. The caller's signal stays armed — it
+      // is what aborts the body on client disconnect.
+      const headerPhase = new AbortController();
+      const headerTimer = setTimeout(
+        () => headerPhase.abort(),
+        timeoutMs,
+      );
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...headers,
+          ...(requestId ? { "x-request-id": requestId } : {}),
+        },
+        body: JSON.stringify(body),
+        signal: signal
+          ? AbortSignal.any([signal, headerPhase.signal])
+          : headerPhase.signal,
+      }).finally(() => clearTimeout(headerTimer));
+
+      const durationMs = Date.now() - start;
+      const retryAfterSeconds = parseRetryAfter(
+        res.headers.get("retry-after"),
+      );
+
+      logger.info(
+        {
+          requestId,
+          url,
+          attempt: attempt + 1,
+          durationMs,
+          status: res.status,
+        },
+        "Upstream request",
+      );
+
+      if (!res.ok) {
+        // The client gets a normal JSON error in its own dialect — read
+        // the body like requestJson does, then throw the same error.
+        const text = await res.text();
+        let parsed: unknown = null;
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          // body stays null — adapters' toCanonicalError handles that
+        }
+        if (
+          RETRYABLE_STATUSES.has(res.status) &&
+          attempt < maxAttempts - 1
+        ) {
+          await sleep(backoffMs(attempt));
+          continue;
+        }
+        const error = new UpstreamError(
+          `Upstream returned ${res.status}`,
+          res.status,
+          parsed,
+          { requestId, url },
+        );
+        error.retryAfterSeconds = retryAfterSeconds;
+        throw error;
+      }
+
+      if (!res.body) {
+        throw new UpstreamError(
+          "Upstream returned no response body",
+          res.status,
+          undefined,
+          { requestId, url },
+        );
+      }
+
+      return { status: res.status, body: res.body, durationMs };
+    } catch (err) {
+      if (err instanceof UpstreamError) throw err;
+
+      const durationMs = Date.now() - start;
+
+      // Aborted by the caller (client disconnect): not a timeout, not
+      // retryable — propagate as-is so the route can tell.
+      if (signal?.aborted) throw err;
+
+      if (isAbortError(err)) {
+        throw new UpstreamError(
+          `Upstream timed out after ${timeoutMs}ms`,
+          undefined,
+          undefined,
+          { requestId, url, durationMs },
+          504,
+        );
+      }
+
+      lastError = new UpstreamError(
+        `Upstream unreachable: ${err instanceof Error ? err.message : "connection failed"}`,
+        undefined,
+        undefined,
+        { requestId, url, attempt: attempt + 1, durationMs },
+      );
+
+      if (attempt < maxAttempts - 1) {
+        await sleep(backoffMs(attempt));
+        continue;
+      }
+    }
+  }
+
+  throw lastError ?? new UpstreamError("Upstream request failed");
+}

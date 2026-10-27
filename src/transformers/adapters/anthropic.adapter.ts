@@ -4,11 +4,17 @@ import type {
   CanonicalResponse,
   CanonicalMessage,
   CanonicalContentPart,
+  CanonicalError,
+  CanonicalErrorKind,
   CanonicalFinishReason,
   CanonicalImage,
   CanonicalModelList,
   ProviderAdapter,
 } from "../../types/canonical.types";
+import {
+  kindFromStatus,
+  makeCanonicalError,
+} from "../../utils/canonical-error";
 import type {
   MessageCreateParams,
   Message,
@@ -25,6 +31,8 @@ export const anthropicAdapter: ProviderAdapter<MessageCreateParams, Message> = {
   fromCanonicalResponse,
   toCanonicalModelList,
   fromCanonicalModelList,
+  toCanonicalError,
+  fromCanonicalError,
 };
 
 // ============ REQUEST: Anthropic → Canonical ============
@@ -327,4 +335,42 @@ function mapToAnthropicStopReason(
     default:
       return "end_turn";
   }
+}
+
+// ============ ERRORS ============
+
+const ANTHROPIC_ERROR_TYPE: Record<CanonicalErrorKind, string> = {
+  invalid_request: "invalid_request_error",
+  authentication: "authentication_error",
+  permission: "permission_error",
+  not_found: "not_found_error",
+  request_too_large: "request_too_large",
+  rate_limit: "rate_limit_error",
+  unsupported: "api_error",
+  upstream: "api_error",
+  unavailable: "overloaded_error",
+  timeout: "api_error",
+  internal: "api_error",
+};
+
+export function toCanonicalError(
+  status: number,
+  body: unknown,
+): CanonicalError {
+  const err = (body as { error?: { message?: unknown } } | null)?.error;
+  const message =
+    typeof err?.message === "string" && err.message.length > 0
+      ? err.message
+      : `Upstream anthropic returned ${status}`;
+  return makeCanonicalError(kindFromStatus(status), message);
+}
+
+export function fromCanonicalError(err: CanonicalError): unknown {
+  return {
+    type: "error",
+    error: {
+      type: ANTHROPIC_ERROR_TYPE[err.kind],
+      message: err.message,
+    },
+  };
 }

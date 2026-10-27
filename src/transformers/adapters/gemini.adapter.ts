@@ -4,10 +4,16 @@ import type {
   CanonicalResponse,
   CanonicalMessage,
   CanonicalContentPart,
+  CanonicalError,
+  CanonicalErrorKind,
   CanonicalFinishReason,
   ProviderAdapter,
   CanonicalModelList,
 } from "../../types/canonical.types";
+import {
+  kindFromStatus,
+  makeCanonicalError,
+} from "../../utils/canonical-error";
 import type {
   Content,
   GenerateContentRequest,
@@ -44,6 +50,8 @@ export const geminiAdapter: ProviderAdapter<
   fromCanonicalResponse,
   toCanonicalModelList,
   fromCanonicalModelList,
+  toCanonicalError,
+  fromCanonicalError,
 };
 
 // ============ REQUEST: Gemini → Canonical ============
@@ -348,4 +356,42 @@ function mapToGeminiFinishReason(reason: CanonicalFinishReason): FinishReason {
     default:
       return FinishReason.STOP;
   }
+}
+
+// ============ ERRORS ============
+
+const GEMINI_ERROR_STATUS: Record<CanonicalErrorKind, string> = {
+  invalid_request: "INVALID_ARGUMENT",
+  authentication: "UNAUTHENTICATED",
+  permission: "PERMISSION_DENIED",
+  not_found: "NOT_FOUND",
+  request_too_large: "RESOURCE_EXHAUSTED",
+  rate_limit: "RESOURCE_EXHAUSTED",
+  unsupported: "UNIMPLEMENTED",
+  upstream: "INTERNAL",
+  unavailable: "UNAVAILABLE",
+  timeout: "DEADLINE_EXCEEDED",
+  internal: "INTERNAL",
+};
+
+export function toCanonicalError(
+  status: number,
+  body: unknown,
+): CanonicalError {
+  const err = (body as { error?: { message?: unknown } } | null)?.error;
+  const message =
+    typeof err?.message === "string" && err.message.length > 0
+      ? err.message
+      : `Upstream gemini returned ${status}`;
+  return makeCanonicalError(kindFromStatus(status), message);
+}
+
+export function fromCanonicalError(err: CanonicalError): unknown {
+  return {
+    error: {
+      code: err.status,
+      message: err.message,
+      status: GEMINI_ERROR_STATUS[err.kind],
+    },
+  };
 }

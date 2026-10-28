@@ -23,6 +23,7 @@ const PROVIDERS: Provider[] = ["openai", "gemini", "ollama", "anthropic"];
 export function parseCliArgs(argv: string[]): CliArgs {
   const { values } = parseArgs({
     args: argv,
+    strict: true,
     options: {
       preset: { type: "string" },
       target: { type: "string" },
@@ -62,11 +63,26 @@ export function parseCliArgs(argv: string[]): CliArgs {
 }
 
 /**
- * Environment values implied by the flags. Keys the user's own env already
- * sets (a non-empty value) are not returned — user env always wins and
- * presets are only ever env values, never changes to config defaults.
+ * The provider the proxy will target: `--target` when given, else a valid
+ * TARGET_API already in the env. Used wherever a preset/flag value depends
+ * on which target is effective.
  */
-export function presetEnv(
+function effectiveTarget(
+  args: CliArgs,
+  env: NodeJS.ProcessEnv,
+): Provider | undefined {
+  if (args.target !== undefined) return args.target;
+  return PROVIDERS.includes(env.TARGET_API as Provider)
+    ? (env.TARGET_API as Provider)
+    : undefined;
+}
+
+/**
+ * Every env value the flags/preset would set, before "user env wins" is
+ * applied. `env` is still consulted to resolve the effective target for
+ * --base-url and the ollama timeout.
+ */
+function wantedEnv(
   args: CliArgs,
   env: NodeJS.ProcessEnv,
 ): Record<string, string> {
@@ -74,13 +90,6 @@ export function presetEnv(
 
   if (args.preset === "claude-code") {
     wanted.SOURCE_API = "anthropic";
-    if (args.model !== undefined) {
-      wanted.MODEL_MAP = `claude-*=${args.model}`;
-    }
-    wanted.TARGET_CONTEXT_WINDOW = "32768";
-    if (args.target === "ollama") {
-      wanted.UPSTREAM_TIMEOUT_MS = "600000";
-    }
   } else if (args.preset === "openai-apps") {
     wanted.SOURCE_API = "openai";
   }
@@ -89,12 +98,18 @@ export function presetEnv(
     wanted.TARGET_API = args.target;
   }
 
+  if (args.preset === "claude-code") {
+    if (args.model !== undefined) {
+      wanted.MODEL_MAP = `claude-*=${args.model}`;
+    }
+    wanted.TARGET_CONTEXT_WINDOW = "32768";
+    if (effectiveTarget(args, env) === "ollama") {
+      wanted.UPSTREAM_TIMEOUT_MS = "600000";
+    }
+  }
+
   if (args.baseUrl !== undefined) {
-    const target =
-      args.target ??
-      (PROVIDERS.includes(env.TARGET_API as Provider)
-        ? (env.TARGET_API as Provider)
-        : undefined);
+    const target = effectiveTarget(args, env);
     if (target === undefined) {
       throw new Error(
         "--base-url requires --target or TARGET_API in the environment",
@@ -107,9 +122,34 @@ export function presetEnv(
     wanted.PORT = String(args.port);
   }
 
+  return wanted;
+}
+
+/**
+ * Environment values implied by the flags. Keys the user's own env already
+ * sets (a non-empty value) are not returned — user env always wins and
+ * presets are only ever env values, never changes to config defaults.
+ */
+export function presetEnv(
+  args: CliArgs,
+  env: NodeJS.ProcessEnv,
+): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(wanted).filter(([key]) => !env[key]),
+    Object.entries(wantedEnv(args, env)).filter(([key]) => !env[key]),
   );
+}
+
+/**
+ * Names of the preset/flag env keys that lost to values already set in
+ * `env` — everything the flags/preset wanted that presetEnv(args, env)
+ * dropped. Names only, never values.
+ */
+export function overriddenKeys(
+  args: CliArgs,
+  env: NodeJS.ProcessEnv,
+): string[] {
+  const applied = presetEnv(args, env);
+  return Object.keys(wantedEnv(args, env)).filter((key) => !(key in applied));
 }
 
 /**
@@ -148,6 +188,13 @@ function usageLines(): string[] {
   ];
 }
 
+/** The preset whose export lines match a resolved source API. */
+function presetForSource(sourceApi: Provider): CliArgs["preset"] {
+  if (sourceApi === "anthropic") return "claude-code";
+  if (sourceApi === "openai") return "openai-apps";
+  return undefined;
+}
+
 export async function main(argv: string[]): Promise<void> {
   try {
     const args = parseCliArgs(argv);
@@ -155,17 +202,42 @@ export async function main(argv: string[]): Promise<void> {
       for (const line of usageLines()) console.log(line);
       return;
     }
-    for (const [key, value] of Object.entries(presetEnv(args, process.env))) {
+
+    const envValues = presetEnv(args, process.env);
+    const overridden = overriddenKeys(args, process.env);
+    for (const [key, value] of Object.entries(envValues)) {
       process.env[key] = value;
     }
+
+    if (overridden.length > 0) {
+      console.error(
+        `babelgate: your environment overrides ${overridden.join(", ")} ` +
+          "(flags and presets never replace values you set)",
+      );
+    }
+    if (
+      args.preset === "claude-code" &&
+      args.model === undefined &&
+      !process.env.MODEL_MAP
+    ) {
+      console.error(
+        "babelgate: no --model given; claude-* model names are forwarded " +
+          "to the target unchanged",
+      );
+    }
+
     await startServer();
     const config = getConfig();
-    for (const line of clientInstructions(
-      args,
-      config.port,
-      config.proxyApiKey,
-    )) {
-      console.log(line);
+    if (args.preset !== undefined) {
+      // The export lines must match the server that actually started: the
+      // user's env may have overridden the preset's SOURCE_API.
+      for (const line of clientInstructions(
+        { ...args, preset: presetForSource(config.sourceApi) },
+        config.port,
+        config.proxyApiKey,
+      )) {
+        console.log(line);
+      }
     }
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err));

@@ -1226,6 +1226,33 @@ Spec §3.4 (Anthropic messages). Non-streaming `tools` / `tool_choice` /
     sets `exitCode = 1`; upstream keys are never accepted as flags or printed
     (only the client-facing `PROXY_API_KEY` appears in the export lines, per
     spec §3.6).
+- **Review fixes:**
+  - `startServer` now calls `app.listen(port)` with no callback and resolves
+    on `server.once("listening")` / rejects on `server.once("error")`.
+    Express 5 registers a passed callback on both `listening` and `error`,
+    so on EADDRINUSE the callback ran and `resolve(server)` won — the
+    process printed the export lines (or nothing, for `node dist/index.js`)
+    and exited 0 with nothing listening. The same silent-exit behaviour
+    existed on `main` for `npm start` / the Docker CMD since the
+    `startServer` refactor; it is now fixed for both entry points. The
+    SIGTERM/SIGINT handlers are registered only after `listening`, not on a
+    failed bind.
+  - The claude-code `UPSTREAM_TIMEOUT_MS=600000` preset value keys off the
+    effective target — `--target`, else a valid `TARGET_API` in the env —
+    via a shared `effectiveTarget` helper, exactly as `--base-url` already
+    resolved it. Previously only `args.target === "ollama"` counted, so
+    `TARGET_API=ollama` in the env got no timeout.
+  - Two stderr warnings were added before the server starts (via
+    `console.error`, never the logger, names only — never env values): one
+    naming the env keys that overrode preset/flag values
+    (`overriddenKeys(args, env)`), and one for `--preset claude-code`
+    without `--model` and no `MODEL_MAP` in the env (claude-* model names
+    are forwarded unchanged).
+  - The printed export lines follow the resolved `config.sourceApi`, not
+    `args.preset`: if the user's env overrides `SOURCE_API` (e.g.
+    `SOURCE_API=openai` with `--preset claude-code`) the lines for the
+    source that actually runs are printed, via a small source→preset
+    mapping that reuses `clientInstructions` unchanged.
 - **Files outside the Files block:** `docs/decisions.md` (this entry; the
   task's Files block lists `src/cli.ts`, `src/cli.test.ts`, `package.json` and
   `src/index.ts`).

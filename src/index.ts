@@ -13,20 +13,9 @@ export function startServer(): Promise<Server> {
   const port = config.port;
 
   return new Promise<Server>((resolve, reject) => {
-    const server = app.listen(port, () => {
-      logger.info(
-        {
-          port,
-          sourceApi: config.sourceApi,
-          targetApi: config.targetApi,
-          targetBaseUrl: config.targetBaseUrl,
-          targetApiKey: config.targetApiKey ? "****" : "Not configured",
-        },
-        "Server started",
-      );
-      resolve(server);
-    });
-    server.on("error", reject);
+    // No callback to app.listen: Express 5 registers a passed callback on
+    // both "listening" and "error", which would resolve on a failed bind.
+    const server = app.listen(port);
 
     // Graceful shutdown — drain in-flight requests instead of killing them
     // mid-generation. server.close() stops accepting new connections and
@@ -43,8 +32,22 @@ export function startServer(): Promise<Server> {
       }, 10_000).unref();
     }
 
-    process.on("SIGTERM", () => shutdown("SIGTERM"));
-    process.on("SIGINT", () => shutdown("SIGINT"));
+    server.once("listening", () => {
+      logger.info(
+        {
+          port,
+          sourceApi: config.sourceApi,
+          targetApi: config.targetApi,
+          targetBaseUrl: config.targetBaseUrl,
+          targetApiKey: config.targetApiKey ? "****" : "Not configured",
+        },
+        "Server started",
+      );
+      process.on("SIGTERM", () => shutdown("SIGTERM"));
+      process.on("SIGINT", () => shutdown("SIGINT"));
+      resolve(server);
+    });
+    server.once("error", reject);
   });
 }
 

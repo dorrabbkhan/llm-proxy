@@ -1522,3 +1522,47 @@ every failure a live-suite defect, not a babelgate defect — fixed as:
   --help`. Suggested (not committed — the conductor app has no
   Workflows permission): add a `./scripts/ci/smoke-pack.sh` step before
   the docker job's build in `.github/workflows/release.yml`.
+
+## v1.1 Task 17: full 16-pair streaming × tools matrix
+
+- **Change:** `tests/integration/stream-pairs.test.ts` replaces
+  `LAUNCH_PAIRS` with `ALL_PAIRS` (all 16 ordered provider pairs) ×
+  {text, tool_call, parallel_tool_calls, after_tool_result} ×
+  {stream, non-stream} — 128 cells, all green.
+- **Adapter fixes needed: none.** Every cell passed against the
+  adapters as shipped on main; the only changes were to the test
+  harness itself, which previously supported just the openai and
+  anthropic source dialects.
+- **Harness additions (same file, inside the Files block):**
+  - Source dialects for `ollama` and `gemini`: request builders
+    (`toolResultRequest`, `clientRequest`), and `clientJsonReply` /
+    `clientStreamReply` parsers (Ollama NDJSON; Gemini SSE parts).
+  - Ollama has no `requests.tools` fixture; its `tools[]` is
+    OpenAI-shaped (spec §3.4), so the test reuses the recorded OpenAI
+    array wrapped in an Ollama-dialect request.
+  - Gemini clients request `:streamGenerateContent?alt=sse` — without
+    `alt=sse` the wire form is a streamed JSON array (spec §3.3), and
+    the matrix asserts the SSE form.
+  - `assertToolsForwarded` reads Gemini `tools[].functionDeclarations`;
+    `assertToolResultForwarded` reads Gemini `contents[].parts`
+    (`functionCall` / `functionResponse`, string results wrapped as
+    `{ "content": "<string>" }` per spec §3.4) and Anthropic `tool_use`
+    content blocks, and now also pins `tool_result.tool_use_id` to the
+    client's call id for the anthropic target.
+- **Assertion semantics resolved by the oracle and spec §3.4:**
+  - Call ids are not compared for cells touching Gemini: the recorded
+    Gemini upstream sends none, so canonical ids are generated and can
+    differ from the oracle's; and the Gemini client side treats
+    `functionCall.id` as optional on the wire (the Gemini API
+    documents `FunctionCall.id` as optional). For cells touching
+    Gemini, names/args/count still compare exactly; client-id
+    distinctness still asserted wherever the source dialect carries
+    ids.
+  - `parallel_tool_calls` count is pinned per oracle:
+    `PARALLEL_CALL_COUNTS` — openai/anthropic/ollama recorded 2 calls,
+    gemini recorded 3 (`sum` × 3). The fixture is authoritative.
+- **Follow-up:** the Gemini non-stream encoder (`functionCallPart` in
+  `src/transformers/adapters/gemini.tools.ts`) omits `functionCall.id`
+  while the stream encoder (`gemini.stream.ts`) sends it; the Gemini
+  API documents the field as optional. Aligning the two encoders is a
+  follow-up, out of scope for this task.

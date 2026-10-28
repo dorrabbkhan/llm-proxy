@@ -1195,3 +1195,37 @@ Spec §3.4 (Anthropic messages). Non-streaming `tools` / `tool_choice` /
   (`stream-sdk.test.ts` 1170, `stream.test.ts` 701, `stream-decoders.test.ts` 471); each file is still
   single-purpose, so splitting wasn't done. Task 17 can lift the source/target dialect helpers out when
   it widens the matrix to 16 pairs.
+
+## v1.1 Task 13: CLI + presets
+
+- **`package.json`:** added only `bin` (`babelgate` → `dist/cli.js`) and `files`
+  (`dist`, `README.md`, `LICENSE`, `NOTICE`). `name`, `version`, `publishConfig`
+  and scripts untouched; `dist/cli.js` gets its `#!/usr/bin/env node` shebang
+  from `src/cli.ts` (tsc preserves it).
+- **`src/index.ts`:** the server bootstrap moved into an exported
+  `startServer(): Promise<Server>` guarded by `require.main === module`, so
+  importing it (as `src/cli.ts` does) opens no socket. `npm start`,
+  `npm run dev` and the Docker `CMD ["node", "dist/index.js"]` still run the
+  module directly and behave exactly as before, including the
+  "Invalid configuration" fatal on bad env and the graceful-shutdown handlers
+  (now registered inside `startServer`, so CLI-started servers get them too).
+- **Ambiguities resolved:**
+  - "User env wins" counts a key as set only when its value is non-empty —
+    `loadConfig` already treats `""` as unset for every var it reads, and a
+    `.env` copied from `.env.example` (`SOURCE_API=` blank) must not disable a
+    preset.
+  - `MODEL_MAP` is emitted only when `--model` is passed; a model-less
+    `claude-*=` rule would be invalid. `--model` has no effect under the
+    `openai-apps` preset (spec names no mapping there).
+  - `--base-url` targets `<TARGET>_API_BASE_URL`, falling back to a valid
+    `TARGET_API` in the env when `--target` isn't passed; it throws naming
+    `--base-url` when neither exists.
+  - `--port` flows through `PORT`, so the port `clientInstructions` prints is
+    always the resolved `config.port` the server actually bound.
+  - `main` catches parse/startup failures, prints the message to stderr and
+    sets `exitCode = 1`; upstream keys are never accepted as flags or printed
+    (only the client-facing `PROXY_API_KEY` appears in the export lines, per
+    spec §3.6).
+- **Files outside the Files block:** `docs/decisions.md` (this entry; the
+  task's Files block lists `src/cli.ts`, `src/cli.test.ts`, `package.json` and
+  `src/index.ts`).

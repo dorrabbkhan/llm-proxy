@@ -603,7 +603,7 @@ describe("Ollama Adapter", () => {
             ],
           },
         ],
-      } as OllamaChatRequest;
+      } as unknown as OllamaChatRequest;
 
       const result = toCanonicalRequest(input);
 

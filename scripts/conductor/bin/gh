@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# gh wrapper for conductor and Devin processes (app-env.sh puts this
+# directory first on PATH): every call runs the real gh as the
+# babelgate-conductor GitHub App with a fresh installation token, so
+# sessions longer than the token's hour never fail. The owner's own
+# shell does not use this wrapper.
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+real=""
+IFS=: read -ra dirs <<<"$PATH"
+for d in "${dirs[@]}"; do
+  [ "$d" = "$here" ] && continue
+  if [ -x "$d/gh" ]; then real="$d/gh"; break; fi
+done
+[ -n "$real" ] || { echo "conductor gh wrapper: real gh not found on PATH" >&2; exit 127; }
+GH_TOKEN="$("$here/../app-token.sh")" exec "$real" "$@"

@@ -9,6 +9,18 @@ a human decision is needed. The owner reviews PRs on GitHub and talks to you thr
 - Decisions/deviations: docs/decisions.md · Agent rules: AGENTS.md
 - Standing notes: docs/conductor/standing-notes.md · Per-task notes: docs/conductor/notes/<version>/task<N>.md
 
+## GitHub identity
+- The conductor and every Devin session act on GitHub as the **babelgate-conductor GitHub App**
+  (`babelgate-conductor[bot]`), never as the owner. Start the conductor with `scripts/conductor/start.sh`;
+  `devin.sh` and `status-comment.sh` set the identity themselves. In a session not started that way, run every
+  `gh`/`git push` through `scripts/conductor/as-app.sh` (escalation comments included).
+- The app cannot change settings, rules or workflows (no Administration or Workflows permission), and has
+  **Actions: read only**: `live.yml` holds provider API keys and a dispatch runs the dispatched branch's code,
+  so the app must not be able to start it. CI reruns and `gh workflow run` are therefore not available; rerun
+  suspected flakes locally, or ask the owner for a CI rerun in the escalation comment.
+- Only the owner may merge to `main` (branch protection + CODEOWNERS) or create `v*` tags (ruleset).
+- Owner commands count only from `dorrabbkhan` with association OWNER (see /inbox).
+
 ## How to talk to Devin
 - Always a FRESH non-interactive session per task, review or fix round:
   `devin -p --prompt-file <file>` (the exact flags are in scripts/conductor/devin.sh; use that wrapper).

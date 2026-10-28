@@ -1143,3 +1143,36 @@ Spec §3.4 (Anthropic messages). Non-streaming `tools` / `tool_choice` /
   integer (`ConfigurationError` otherwise); forwarding and completion log
   lines carry both `model` (mapped, upstream-bound) and `requestedModel`
   (client's name) per §3.5 "logs show both".
+
+## v1.1 Task 12: property tests + launch-pair matrix
+
+- **`decode(encode(events))` is asserted on the reassembled stream for all four providers**, not only
+  Anthropic (the plan names Anthropic's buffered arguments as the exception). The wires genuinely can't
+  carry the differences: Anthropic/Ollama/Gemini emit each call whole at `tool_call_end` (delta splits
+  and start/end positions are lost); OpenAI can't carry `tool_call_end` positions (its decoder closes
+  calls at the finish chunk) or the `usage` position (emitted at `[DONE]`); Ollama has no message id
+  (its decoder generates one). So the property is the reassembled `{message, finishReason, usage}`,
+  with tool arguments compared in wire form — the raw JSON string for OpenAI, the
+  `parseToolArguments`-normalized object for the others (covering the `_invalid_arguments` wrapper on
+  generated non-JSON arguments). This also feeds fully interleaved deltas to every encoder — the
+  §3.1-rule-5 buffering the other tests only exercise for Anthropic.
+- **Generated sequences stay inside what every wire can carry:** tool-call ends in index order
+  (out-of-order ends would renumber decoded calls — a wire limitation, not a canonical one);
+  `finishReason` is `tool_call` exactly when calls exist else `stop`/`length`; `usage.totalTokens` is
+  always input+output (Anthropic and Ollama recompute it); and usage is always generated for
+  Anthropic/Ollama, whose wire streams always carry counts (their decoders emit a usage event even when
+  the encoder saw none).
+- **`tests/mocks/upstreams.ts`**: `streamCase` now also drives non-stream replies via exported
+  `nonStreamBody(provider)`. Resolution order: `"text"` → the recorded `responses.basic`; a named
+  fixture response (`openai.tool_call`, `anthropic.tool_use`); the recorded non-streaming twin
+  (`<case>.nonstreaming.json`, then the `<case>.json` `nonStreaming` field); last, the case's documented
+  `expectedEvents` reassembled and re-encoded in the provider's dialect. The derive path exists because
+  no recorded parallel-tool-calls non-stream body exists for OpenAI/Anthropic/Gemini (fixtures are
+  owner-only changes); it uses only oracle `expectedEvents` plus the provider's own encoder.
+- **Files outside the Files block:** `docs/decisions.md` (this entry; the task's Files block lists only
+  the two new test files and `tests/mocks/upstreams.ts`).
+- **`tests/integration/stream-pairs.test.ts` is ~590 lines and `tests/contracts/stream-properties.test.ts`
+  ~416 — above the ~400 guideline.** The generated-matrix test files in this suite already run past that
+  (`stream-sdk.test.ts` 1170, `stream.test.ts` 701, `stream-decoders.test.ts` 471); each file is still
+  single-purpose, so splitting wasn't done. Task 17 can lift the source/target dialect helpers out when
+  it widens the matrix to 16 pairs.

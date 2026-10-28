@@ -5,8 +5,18 @@ import {
   toCanonicalResponse,
   fromCanonicalResponse,
 } from './anthropic.adapter';
-import type { CanonicalRequest, CanonicalResponse } from '../../types/canonical.types';
-import type { MessageCreateParams, Message } from '../../types/anthropic.types';
+import { ValidationError } from '../../utils/errors';
+import type {
+  CanonicalRequest,
+  CanonicalResponse,
+  CanonicalToolChoice,
+} from '../../types/canonical.types';
+import type {
+  MessageCreateParams,
+  Message,
+  Tool,
+  ToolChoice,
+} from '../../types/anthropic.types';
 
 // Helper to create test Message objects
 function createTestMessage(
@@ -296,6 +306,446 @@ describe('Anthropic Adapter', () => {
       expect(fromCanonicalResponse(makeCanonical('stop')).stop_reason).toBe('end_turn');
       expect(fromCanonicalResponse(makeCanonical('length')).stop_reason).toBe('max_tokens');
       expect(fromCanonicalResponse(makeCanonical('tool_call')).stop_reason).toBe('tool_use');
+    });
+  });
+
+  describe('tool calling', () => {
+    const weatherTool: Tool = {
+      name: 'get_weather',
+      description: 'Get current weather',
+      input_schema: {
+        type: 'object',
+        properties: { location: { type: 'string' } },
+        required: ['location'],
+      },
+    };
+
+    it('anthropic tool_choice round trip', () => {
+      const cases: Array<[ToolChoice, CanonicalToolChoice]> = [
+        [{ type: 'auto' }, 'auto'],
+        [{ type: 'any' }, 'required'],
+        [{ type: 'none' }, 'none'],
+        [
+          { type: 'tool', name: 'get_weather' },
+          { type: 'function', function: { name: 'get_weather' } },
+        ],
+      ];
+
+      for (const [anthropicChoice, canonicalChoice] of cases) {
+        const input: MessageCreateParams = {
+          model: 'claude-3-opus-20240229',
+          messages: [{ role: 'user', content: 'Weather?' }],
+          max_tokens: 1024,
+          tools: [weatherTool],
+          tool_choice: anthropicChoice,
+        };
+
+        const canonical = toCanonicalRequest(input);
+        expect(canonical.toolChoice).toEqual(canonicalChoice);
+        expect(canonical.tools).toEqual([
+          {
+            type: 'function',
+            function: {
+              name: 'get_weather',
+              description: 'Get current weather',
+              parameters: weatherTool.input_schema,
+            },
+          },
+        ]);
+
+        const back = fromCanonicalRequest(canonical);
+        expect(back.tool_choice).toEqual(anthropicChoice);
+        expect(back.tools).toEqual([weatherTool]);
+      }
+    });
+
+    it('user message with 3 tool_results splits into 3 tool messages then text', () => {
+      const input: MessageCreateParams = {
+        model: 'claude-3-opus-20240229',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'tool_result', tool_use_id: 'toolu_1', content: 'Paris' },
+              { type: 'tool_result', tool_use_id: 'toolu_2', content: 'London' },
+              { type: 'tool_result', tool_use_id: 'toolu_3', content: 'Berlin' },
+              { type: 'text', text: 'Which is warmest?' },
+            ],
+          },
+        ],
+        max_tokens: 1024,
+      };
+
+      const result = toCanonicalRequest(input);
+
+      expect(result.messages).toHaveLength(4);
+      expect(result.messages[0]).toEqual({
+        role: 'tool',
+        toolCallId: 'toolu_1',
+        content: 'Paris',
+      });
+      expect(result.messages[1]).toEqual({
+        role: 'tool',
+        toolCallId: 'toolu_2',
+        content: 'London',
+      });
+      expect(result.messages[2]).toEqual({
+        role: 'tool',
+        toolCallId: 'toolu_3',
+        content: 'Berlin',
+      });
+      expect(result.messages[3].role).toBe('user');
+      expect(result.messages[3].content).toEqual([
+        { type: 'text', text: 'Which is warmest?' },
+      ]);
+    });
+
+    it('user message of only tool_results produces no extra user message', () => {
+      const input: MessageCreateParams = {
+        model: 'claude-3-opus-20240229',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'tool_result', tool_use_id: 'toolu_1', content: 'Paris' },
+            ],
+          },
+        ],
+        max_tokens: 1024,
+      };
+
+      const result = toCanonicalRequest(input);
+
+      expect(result.messages).toHaveLength(1);
+      expect(result.messages[0].role).toBe('tool');
+    });
+
+    it('consecutive tool messages merge into one user message', () => {
+      const input: CanonicalRequest = {
+        model: 'claude-3-opus-20240229',
+        messages: [
+          { role: 'assistant', content: '', toolCalls: [{
+            id: 'toolu_1',
+            type: 'function',
+            function: { name: 'get_weather', arguments: '{"location":"Paris"}' },
+          }] },
+          { role: 'tool', toolCallId: 'toolu_1', content: 'Paris' },
+          { role: 'tool', toolCallId: 'toolu_2', content: 'London' },
+          { role: 'user', content: 'Thanks' },
+        ],
+      };
+
+      const result = fromCanonicalRequest(input);
+
+      expect(result.messages).toHaveLength(3);
+      expect(result.messages[1].role).toBe('user');
+      expect(result.messages[1].content).toEqual([
+        { type: 'tool_result', tool_use_id: 'toolu_1', content: 'Paris' },
+        { type: 'tool_result', tool_use_id: 'toolu_2', content: 'London' },
+      ]);
+      expect(result.messages[2]).toEqual({ role: 'user', content: 'Thanks' });
+    });
+
+    it('is_error maps to isError and back', () => {
+      const input: MessageCreateParams = {
+        model: 'claude-3-opus-20240229',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: 'toolu_1',
+                content: 'boom',
+                is_error: true,
+              },
+              { type: 'tool_result', tool_use_id: 'toolu_2', content: 'fine' },
+            ],
+          },
+        ],
+        max_tokens: 1024,
+      };
+
+      const canonical = toCanonicalRequest(input);
+      expect(canonical.messages[0]).toEqual({
+        role: 'tool',
+        toolCallId: 'toolu_1',
+        content: 'boom',
+        isError: true,
+      });
+      expect(canonical.messages[1]).toEqual({
+        role: 'tool',
+        toolCallId: 'toolu_2',
+        content: 'fine',
+      });
+
+      const back = fromCanonicalRequest(canonical);
+      const blocks = back.messages[0].content;
+      expect(Array.isArray(blocks)).toBe(true);
+      if (Array.isArray(blocks)) {
+        expect(blocks[0]).toEqual({
+          type: 'tool_result',
+          tool_use_id: 'toolu_1',
+          content: 'boom',
+          is_error: true,
+        });
+        // is_error is omitted when not true
+        expect(blocks[1]).toEqual({
+          type: 'tool_result',
+          tool_use_id: 'toolu_2',
+          content: 'fine',
+        });
+      }
+    });
+
+    it('tool_result with text blocks becomes string content', () => {
+      const input: MessageCreateParams = {
+        model: 'claude-3-opus-20240229',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: 'toolu_1',
+                content: [
+                  { type: 'text', text: 'line one' },
+                  { type: 'text', text: 'line two' },
+                ],
+              },
+            ],
+          },
+        ],
+        max_tokens: 1024,
+      };
+
+      const result = toCanonicalRequest(input);
+      expect(result.messages[0].content).toBe('line one\nline two');
+    });
+
+    it('image block in tool_result throws ValidationError naming the type', () => {
+      const input: MessageCreateParams = {
+        model: 'claude-3-opus-20240229',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: 'toolu_1',
+                content: [
+                  { type: 'text', text: 'see this' },
+                  {
+                    type: 'image',
+                    source: {
+                      type: 'base64',
+                      media_type: 'image/png',
+                      data: 'abc',
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        max_tokens: 1024,
+      };
+
+      expect(() => toCanonicalRequest(input)).toThrow(ValidationError);
+      expect(() => toCanonicalRequest(input)).toThrow(/"image"/);
+    });
+
+    it('assistant tool_use blocks decode to toolCalls', () => {
+      const input: MessageCreateParams = {
+        model: 'claude-3-opus-20240229',
+        messages: [
+          {
+            role: 'assistant',
+            content: [
+              { type: 'text', text: 'Checking.' },
+              {
+                type: 'tool_use',
+                id: 'toolu_1',
+                name: 'get_weather',
+                input: { location: 'Paris' },
+              },
+            ],
+          },
+        ],
+        max_tokens: 1024,
+      };
+
+      const result = toCanonicalRequest(input);
+
+      expect(result.messages[0].role).toBe('assistant');
+      expect(result.messages[0].content).toEqual([
+        { type: 'text', text: 'Checking.' },
+      ]);
+      expect(result.messages[0].toolCalls).toEqual([
+        {
+          id: 'toolu_1',
+          type: 'function',
+          function: {
+            name: 'get_weather',
+            arguments: '{"location":"Paris"}',
+          },
+        },
+      ]);
+    });
+
+    it('assistant text then tool_use order on encode', () => {
+      const input: CanonicalRequest = {
+        model: 'claude-3-opus-20240229',
+        messages: [
+          {
+            role: 'assistant',
+            content: 'Let me check.',
+            toolCalls: [
+              {
+                id: 'toolu_1',
+                type: 'function',
+                function: {
+                  name: 'get_weather',
+                  arguments: '{"location":"Paris"}',
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      const result = fromCanonicalRequest(input);
+
+      expect(result.messages[0].role).toBe('assistant');
+      expect(result.messages[0].content).toEqual([
+        { type: 'text', text: 'Let me check.' },
+        {
+          type: 'tool_use',
+          id: 'toolu_1',
+          name: 'get_weather',
+          input: { location: 'Paris' },
+        },
+      ]);
+    });
+
+    it('empty tool input encodes as {}', () => {
+      const input: CanonicalRequest = {
+        model: 'claude-3-opus-20240229',
+        messages: [
+          {
+            role: 'assistant',
+            content: '',
+            toolCalls: [
+              {
+                id: 'toolu_1',
+                type: 'function',
+                function: { name: 'ping', arguments: '' },
+              },
+            ],
+          },
+        ],
+      };
+
+      const result = fromCanonicalRequest(input);
+      const blocks = result.messages[0].content;
+      expect(blocks).toEqual([
+        { type: 'tool_use', id: 'toolu_1', name: 'ping', input: {} },
+      ]);
+    });
+
+    it('invalid tool arguments encode with the _invalid_arguments wrapper', () => {
+      const input: CanonicalRequest = {
+        model: 'claude-3-opus-20240229',
+        messages: [
+          {
+            role: 'assistant',
+            content: '',
+            toolCalls: [
+              {
+                id: 'toolu_1',
+                type: 'function',
+                function: { name: 'ping', arguments: 'not json' },
+              },
+            ],
+          },
+        ],
+      };
+
+      const result = fromCanonicalRequest(input);
+      const blocks = result.messages[0].content;
+      expect(blocks).toEqual([
+        {
+          type: 'tool_use',
+          id: 'toolu_1',
+          name: 'ping',
+          input: { _invalid_arguments: 'not json' },
+        },
+      ]);
+    });
+
+    it('response tool_use blocks decode to message.toolCalls', () => {
+      const input = createTestMessage({
+        content: [
+          { type: 'text', text: 'Checking.' },
+          {
+            type: 'tool_use',
+            id: 'toolu_xyz',
+            name: 'get_weather',
+            input: { location: 'Paris' },
+          },
+        ] as Message['content'],
+        stop_reason: 'tool_use',
+      });
+
+      const result = toCanonicalResponse(input, 'claude');
+
+      expect(result.message.content).toBe('Checking.');
+      expect(result.message.toolCalls).toEqual([
+        {
+          id: 'toolu_xyz',
+          type: 'function',
+          function: {
+            name: 'get_weather',
+            arguments: '{"location":"Paris"}',
+          },
+        },
+      ]);
+      expect(result.finishReason).toBe('tool_call');
+    });
+
+    it('response toolCalls encode after text as tool_use blocks', () => {
+      const input: CanonicalResponse = {
+        id: 'msg_1',
+        model: 'claude-3-opus',
+        message: {
+          role: 'assistant',
+          content: 'Let me check.',
+          toolCalls: [
+            {
+              id: 'toolu_xyz',
+              type: 'function',
+              function: {
+                name: 'get_weather',
+                arguments: '{"location":"Paris"}',
+              },
+            },
+          ],
+        },
+        finishReason: 'tool_call',
+      };
+
+      const result = fromCanonicalResponse(input);
+
+      expect(result.content).toEqual([
+        { type: 'text', text: 'Let me check.' },
+        {
+          type: 'tool_use',
+          id: 'toolu_xyz',
+          name: 'get_weather',
+          input: { location: 'Paris' },
+        },
+      ]);
+      expect(result.stop_reason).toBe('tool_use');
     });
   });
 

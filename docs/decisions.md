@@ -1319,8 +1319,7 @@ Spec §3.4 (Anthropic messages). Non-streaming `tools` / `tool_choice` /
   still signals streaming in the path — the case uses
   `:streamGenerateContent?alt=sse`. `UNSUPPORTED_CHECKS` removed
   (nothing else used it). The file is outside the task's Files block.
-  Owner approval: given in the conductor session 2026-10-28; owner to
-  add sign-off.
+  Owner sign-off: Dorrabb Khan, 2026-10-28 — 501→200 live stream case approved.
 - **OpenRouter `streams text` token budget:** the case relied on
   `chatCall`'s 16-token `max_tokens` default, which can truncate before
   a text delta or usage; the `openrouter` target now gets the same 512
@@ -1402,8 +1401,14 @@ Spec §3.4 (Anthropic messages). Non-streaming `tools` / `tool_choice` /
     needs owner approval).
 - **Before Task 16 / the release:** the nightly live suite's OpenRouter
   cases need credit on `OPENROUTER_API_KEY`.
-- Owner decision: given in the conductor session 2026-10-28; owner to
-  add sign-off.
+- **Gemini target merged without a clean live rerun:** the `gemini`
+  chat and stream cases failed only on the free-tier quota (429) and a
+  503 "high demand"; `gemini-3.8-flash` itself resolves (the model-list
+  cases pass). Run the gemini target live once on a fresh quota or a
+  paid tier before the release.
+- Owner sign-off: Dorrabb Khan, 2026-10-28 — D3 deviation accepted
+  (OpenRouter gate passed on qwen/qwen3-coder; Ollama Claude Code gate
+  not run, accepted risk); merging without the Gemini live rerun.
 
 ### Fix round 2 (owner live run)
 

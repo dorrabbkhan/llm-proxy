@@ -1,9 +1,9 @@
 # babelgate roadmap
 
-**Status:** v1.0.1 released (correctness patch on v1.0's chat + model-list translation across OpenAI,
-Gemini, Ollama and Anthropic: provider-dialect errors, native client auth headers, opt-in live suite,
-CI, Apache-2.0 + CLA; ~700 tests). **Next: v1.1** (streaming, tools, Claude Code on anything — public
-launch). Last revised 2026-10-27. Reasoning behind this roadmap: the
+**Status:** v1.1.0 released — public launch: streaming and tools across all four adapters, the
+`npx babelgate` CLI with `claude-code` / `openai-apps` presets, and the GHCR release workflow.
+**Next: v1.1.x milestone 2** (full 16-pair streaming × tools matrix, live Gemini and Ollama sources),
+then v1.2. Last revised 2026-10-28. Reasoning behind this roadmap: the
 2026-10-26 roadmap design spec in `docs/superpowers/specs/`.
 
 **Positioning:** a small, typed, contract-tested gateway that translates **any client format to any

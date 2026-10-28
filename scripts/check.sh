@@ -32,5 +32,6 @@ scripts/ci/fixture-guard.sh
 npm run --silent typecheck
 npm test
 npm run --silent build
+scripts/ci/smoke-pack.sh
 
 printf '\nALL CHECKS PASSED\n'

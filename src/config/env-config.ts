@@ -3,7 +3,7 @@ import type { Provider } from "../transformers";
 import { parseModelMap, type ModelMapRule } from "../utils/model-map";
 import { ConfigurationError } from "../utils/errors";
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const VALID_PROVIDERS: Provider[] = ["openai", "gemini", "ollama", "anthropic"];
 

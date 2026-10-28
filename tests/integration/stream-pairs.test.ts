@@ -30,26 +30,30 @@ import {
   MOCK_BASE_URLS,
 } from "../mocks/upstreams";
 import openaiFixtures from "../fixtures/openai.json";
+import geminiFixtures from "../fixtures/gemini.json";
+import ollamaFixtures from "../fixtures/ollama.json";
 import anthropicFixtures from "../fixtures/anthropic.json";
 
 /**
- * Launch-pair matrix (spec §4.5, §5): every launch pair ×
+ * Full pair matrix (spec §4.5, §5 milestone 2): every ordered pair of
+ * the four providers ×
  * {text, tool_call, parallel_tool_calls, after_tool_result} ×
  * {stream, non-stream}. The msw upstream serves the recorded stream
  * corpus for streaming requests and the matching non-stream body
  * otherwise (see tests/mocks/upstreams.ts). For each cell the client
  * must receive its own dialect; tool cases keep the upstream's call
- * names and ids with parsed arguments and distinct ids; and
- * after_tool_result's tool result must reach the upstream request in
- * the target's dialect.
- *
- * Task 17 replaces LAUNCH_PAIRS with all 16 pairs.
+ * names and ids with parsed arguments and distinct ids (ids are not
+ * compared for cells touching Gemini: the recorded Gemini upstream
+ * sends none — ids are generated per spec §3.4 "id used when
+ * present, otherwise generated" — and the Gemini client side treats
+ * `id` as optional; the stream/non-stream encoder difference is a
+ * listed follow-up); and after_tool_result's tool result must reach
+ * the upstream request in the target's dialect.
  */
-const LAUNCH_PAIRS: [Provider, Provider][] = [
-  ["anthropic", "ollama"],
-  ["anthropic", "openai"],
-  ["openai", "ollama"],
-];
+const PROVIDERS: Provider[] = ["openai", "gemini", "ollama", "anthropic"];
+const ALL_PAIRS: [Provider, Provider][] = PROVIDERS.flatMap((source) =>
+  PROVIDERS.map((target) => [source, target] as [Provider, Provider]),
+);
 
 const CASES = [
   "text",
@@ -59,20 +63,47 @@ const CASES = [
 ] as const;
 type Case = (typeof CASES)[number];
 
+/** Calls recorded in each provider's parallel_tool_calls oracle. */
+const PARALLEL_CALL_COUNTS: Record<Provider, number> = {
+  openai: 2,
+  anthropic: 2,
+  ollama: 2,
+  gemini: 3,
+};
+
 const STREAMS_DIR = join(__dirname, "..", "fixtures", "streams");
 const TOOL_RESULT_TEXT = "72°F and sunny";
 
-// The call id each launch source sends in its after_tool_result request.
-const CLIENT_CALL_ID: Partial<Record<Provider, string>> = {
+// The call id each source sends in its after_tool_result request.
+const CLIENT_CALL_ID: Record<Provider, string> = {
   openai: "call_1",
   anthropic: "toolu_1",
+  ollama: "call_1",
+  gemini: "call_1",
 };
 
-const SOURCE_FIXTURES: Partial<
-  Record<Provider, { requests: Record<string, unknown> }>
+const SOURCE_FIXTURES: Record<
+  Provider,
+  { requests: Record<string, unknown> }
 > = {
   openai: openaiFixtures,
+  gemini: geminiFixtures,
+  ollama: ollamaFixtures,
   anthropic: anthropicFixtures,
+};
+
+/**
+ * Ollama's `tools[]` is OpenAI-shaped (spec §3.4), and its fixture has
+ * no `requests.tools` entry — reuse the recorded OpenAI array as the
+ * tool definitions and wrap it in an Ollama-dialect request.
+ */
+const OLLAMA_TOOLS = (
+  openaiFixtures.requests.tools as { tools: unknown[] }
+).tools;
+const OLLAMA_TOOLS_REQUEST = {
+  model: "llama3",
+  messages: [{ role: "user", content: "What's the weather?" }],
+  tools: OLLAMA_TOOLS,
 };
 
 const server = setupServer(...upstreamHandlers);
@@ -129,10 +160,12 @@ function postStream(path: string, body: unknown): request.Test {
 // ---------- client request bodies ----------
 
 function toolResultRequest(source: Provider): Record<string, unknown> {
-  const tools = (
-    SOURCE_FIXTURES[source]!.requests.tools as { tools: unknown[] }
-  ).tools;
-  const callId = CLIENT_CALL_ID[source]!;
+  const tools =
+    source === "ollama"
+      ? OLLAMA_TOOLS
+      : (SOURCE_FIXTURES[source].requests.tools as { tools: unknown[] })
+          .tools;
+  const callId = CLIENT_CALL_ID[source];
   if (source === "openai") {
     return {
       model: "gpt-4",
@@ -192,6 +225,70 @@ function toolResultRequest(source: Provider): Record<string, unknown> {
       tools,
     };
   }
+  if (source === "ollama") {
+    // Ollama pairs a tool result to its call by `tool_name`, FIFO by
+    // name (docs.ollama.com api.md); the call carries the wire id.
+    return {
+      model: "llama3",
+      messages: [
+        { role: "user", content: "What's the weather?" },
+        {
+          role: "assistant",
+          content: "",
+          tool_calls: [
+            {
+              id: callId,
+              type: "function",
+              function: {
+                name: "get_weather",
+                arguments: { location: "Paris" },
+              },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          tool_name: "get_weather",
+          content: TOOL_RESULT_TEXT,
+        },
+      ],
+      tools,
+    };
+  }
+  if (source === "gemini") {
+    // functionResponse is matched to the pending functionCall by name
+    // (a wire `id` wins when present — we send one).
+    return {
+      contents: [
+        { role: "user", parts: [{ text: "What's the weather?" }] },
+        {
+          role: "model",
+          parts: [
+            {
+              functionCall: {
+                id: callId,
+                name: "get_weather",
+                args: { location: "Paris" },
+              },
+            },
+          ],
+        },
+        {
+          role: "user",
+          parts: [
+            {
+              functionResponse: {
+                id: callId,
+                name: "get_weather",
+                response: { content: TOOL_RESULT_TEXT },
+              },
+            },
+          ],
+        },
+      ],
+      tools,
+    };
+  }
   throw new Error(`no tool-result request builder for source ${source}`);
 }
 
@@ -204,13 +301,22 @@ function clientRequest(
     caseName === "after_tool_result"
       ? toolResultRequest(source)
       : caseName === "text"
-        ? SOURCE_FIXTURES[source]!.requests.basic
-        : SOURCE_FIXTURES[source]!.requests.tools;
+        ? SOURCE_FIXTURES[source].requests.basic
+        : (SOURCE_FIXTURES[source].requests.tools ?? OLLAMA_TOOLS_REQUEST);
+  // Gemini picks the stream by URL suffix (`:streamGenerateContent`),
+  // not a `stream` body field; `alt=sse` selects SSE over the
+  // JSON-array form (spec §3.3).
+  const path =
+    source === "gemini"
+      ? `/v1beta/models/gemini-2.0-flash:${
+          streaming ? "streamGenerateContent?alt=sse" : "generateContent"
+        }`
+      : PROVIDER_PATHS[source].pathPrefix;
   return {
-    path: PROVIDER_PATHS[source].pathPrefix,
+    path,
     body: {
       ...(base as Record<string, unknown>),
-      ...(streaming && { stream: true }),
+      ...(streaming && source !== "gemini" && { stream: true }),
     },
   };
 }
@@ -375,6 +481,33 @@ function clientJsonReply(source: Provider, body: any): ClientReply {
           .map((b) => ({ id: b.id, name: b.name, args: b.input })),
       };
     }
+    case "ollama": {
+      const msg = body.message ?? {};
+      return {
+        text: msg.content ?? "",
+        // Ollama call arguments are already objects on the wire.
+        calls: (msg.tool_calls ?? []).map((tc: any) => ({
+          id: tc.id,
+          name: tc.function?.name,
+          args: tc.function?.arguments,
+        })),
+      };
+    }
+    case "gemini": {
+      const parts: any[] = body.candidates?.[0]?.content?.parts ?? [];
+      return {
+        text: parts.map((p) => p.text ?? "").join(""),
+        // The non-stream encoder omits functionCall.id (optional in
+        // the API; the stream encoder sends it — see the Task 17
+        // follow-up in docs/decisions.md).
+        calls: parts
+          .filter((p) => p.functionCall)
+          .map((p) => ({
+            name: p.functionCall.name,
+            args: p.functionCall.args,
+          })),
+      };
+    }
     default:
       throw new Error(`no reply parser for source ${source}`);
   }
@@ -461,6 +594,48 @@ function clientStreamReply(source: Provider, wire: string): ClientReply {
         })),
       };
     }
+    case "ollama": {
+      let text = "";
+      const calls: ClientCall[] = [];
+      // NDJSON: one JSON object per line; tool calls arrive whole.
+      for (const line of wire.split("\n")) {
+        if (line === "") continue;
+        const obj = JSON.parse(line);
+        if (typeof obj.message?.content === "string") {
+          text += obj.message.content;
+        }
+        for (const tc of obj.message?.tool_calls ?? []) {
+          calls.push({
+            id: tc.id,
+            name: tc.function?.name,
+            args: tc.function?.arguments,
+          });
+        }
+      }
+      return { text, calls };
+    }
+    case "gemini": {
+      let text = "";
+      const calls: ClientCall[] = [];
+      for (const line of wire.split(/\r?\n/)) {
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).replace(/^ /, "");
+        if (data === "") continue;
+        const evt = JSON.parse(data);
+        for (const part of evt.candidates?.[0]?.content?.parts ?? []) {
+          if (typeof part.text === "string") text += part.text;
+          // functionCall parts arrive whole; `id` is optional on the
+          // wire (the stream encoder sends it) and is ignored here.
+          if (part.functionCall) {
+            calls.push({
+              name: part.functionCall.name,
+              args: part.functionCall.args,
+            });
+          }
+        }
+      }
+      return { text, calls };
+    }
     default:
       throw new Error(`no stream parser for source ${source}`);
   }
@@ -513,8 +688,11 @@ function assertSourceFormat(
 /** The upstream request must carry the tool definitions in its dialect. */
 function assertToolsForwarded(target: Provider): void {
   const tools = (capturedRequests[target][0] as any)?.tools;
-  const names = (tools ?? []).map(
-    (t: any) => t.function?.name ?? t.name,
+  const names = (tools ?? []).flatMap((t: any) =>
+    // Gemini: tools[].functionDeclarations[]; others: tools[].function.name / .name
+    (t.functionDeclarations ?? [t]).map(
+      (d: any) => d.function?.name ?? d.name,
+    ),
   );
   expect(names).toContain("get_weather");
 }
@@ -524,12 +702,35 @@ function assertToolResultForwarded(
   target: Provider,
   source: Provider,
 ): void {
+  if (target === "gemini") {
+    const contents = (capturedRequests.gemini[0] as any)?.contents ?? [];
+    const parts = contents.flatMap((c: any) => c.parts ?? []);
+    expect(
+      parts.some((p: any) => p.functionCall?.name === "get_weather"),
+      "upstream request carries the assistant tool call",
+    ).toBe(true);
+    const res = parts.find((p: any) => p.functionResponse);
+    expect(res, "upstream request carries the tool result").toBeDefined();
+    expect(res.functionResponse.name).toBe("get_weather");
+    // A string tool result is wrapped as `{ "content": "<string>" }`
+    // (spec §3.4 verbatim).
+    expect(res.functionResponse.response).toEqual({
+      content: TOOL_RESULT_TEXT,
+    });
+    return;
+  }
   const messages = (capturedRequests[target][0] as any)?.messages ?? [];
   expect(
-    messages.some((m: any) =>
-      (m.tool_calls ?? []).some(
-        (tc: any) => tc.function?.name === "get_weather",
-      ),
+    messages.some(
+      (m: any) =>
+        (m.tool_calls ?? []).some(
+          (tc: any) => tc.function?.name === "get_weather",
+        ) ||
+        // Anthropic: assistant tool calls are tool_use content blocks.
+        (Array.isArray(m.content) &&
+          m.content.some(
+            (b: any) => b.type === "tool_use" && b.name === "get_weather",
+          )),
     ),
     "upstream request carries the assistant tool call",
   ).toBe(true);
@@ -556,11 +757,17 @@ function assertToolResultForwarded(
   if (target === "ollama") {
     expect(toolMsg.tool_name).toBe("get_weather");
   }
+  if (target === "anthropic") {
+    const block = (toolMsg.content ?? []).find(
+      (b: any) => b.type === "tool_result",
+    );
+    expect(block.tool_use_id).toBe(CLIENT_CALL_ID[source]);
+  }
 }
 
 // ---------- the matrix ----------
 
-const matrix = LAUNCH_PAIRS.flatMap(([source, target]) =>
+const matrix = ALL_PAIRS.flatMap(([source, target]) =>
   CASES.flatMap((caseName) =>
     [true, false].map((streaming) => ({
       source,
@@ -571,7 +778,7 @@ const matrix = LAUNCH_PAIRS.flatMap(([source, target]) =>
   ),
 );
 
-describe("launch-pair matrix (spec §4.5)", () => {
+describe("16-pair streaming × tools matrix (spec §4.5, §5)", () => {
   it.each(matrix)(
     "$source → $target $caseName stream=$streaming",
     async ({ source, target, caseName, streaming }) => {
@@ -600,10 +807,12 @@ describe("launch-pair matrix (spec §4.5)", () => {
         expect(reply.text).toBe(expected);
       } else {
         const expected = expectedCalls(target, caseName, streaming);
-        // Exact count and names are pinned by the oracle: tool_call →
-        // exactly 1 call, parallel_tool_calls → exactly 2 — so a
+        // Exact counts are pinned by the oracle: tool_call → exactly 1
+        // call; parallel_tool_calls → what each provider recorded
+        // (Gemini's recorded reply carries 3, the others 2) — so a
         // misconfigured mock can't pass with [] == [].
-        const wantCalls = caseName === "tool_call" ? 1 : 2;
+        const wantCalls =
+          caseName === "tool_call" ? 1 : PARALLEL_CALL_COUNTS[target];
         expect(
           expected.length,
           `oracle must carry ${wantCalls} call(s) for ${caseName}`,
@@ -618,15 +827,29 @@ describe("launch-pair matrix (spec §4.5)", () => {
           ),
           "oracle calls must carry names and ids",
         ).toBe(true);
-        expect(reply.calls).toEqual(expected);
+        // Ids are not compared for cells touching Gemini: the
+        // recorded Gemini upstream sends none, so canonical ids are
+        // generated and can differ from the oracle's; and the Gemini
+        // client side treats `functionCall.id` as optional (the
+        // stream encoder sends it, the non-stream encoder omits it —
+        // a listed follow-up). Elsewhere the oracle's ids must
+        // survive intact.
+        const idsOnWire = source !== "gemini" && target !== "gemini";
+        const stripIds = (calls: ExpectedCall[]) =>
+          calls.map(({ id: _id, ...rest }) => rest);
+        expect(
+          idsOnWire ? reply.calls : stripIds(reply.calls),
+        ).toEqual(idsOnWire ? expected : stripIds(expected));
         expect(
           new Set(expected.map((c) => c.id)).size,
           "oracle call ids must be distinct",
         ).toBe(wantCalls);
-        expect(
-          new Set(reply.calls.map((c) => c.id)).size,
-          "client call ids must be distinct",
-        ).toBe(reply.calls.length);
+        if (source !== "gemini") {
+          expect(
+            new Set(reply.calls.map((c) => c.id)).size,
+            "client call ids must be distinct",
+          ).toBe(reply.calls.length);
+        }
       }
 
       if (caseName === "text") return;

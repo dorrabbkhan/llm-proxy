@@ -12,9 +12,11 @@ import {
 
 /**
  * Live error-path suite (spec §3.3, §3.2): an unknown model against a
- * real upstream must come back as a 404 rendered in the *source*
- * provider's dialect, and a streaming request as a 200 stream in that
- * dialect. Shape assertions only — upstream error text isn't asserted.
+ * real upstream must come back rendered in the *source* provider's
+ * dialect — 404 for every target except OpenRouter, which answers an
+ * unknown model with HTTP 400 — and a streaming request as a 200 stream
+ * in that dialect. Shape assertions only — upstream error text isn't
+ * asserted.
  */
 
 const SOURCES: Provider[] = ['openai', 'anthropic', 'gemini', 'ollama'];
@@ -36,6 +38,31 @@ const NOT_FOUND_CHECKS: Record<Provider, (body: unknown) => void> = {
     const err = (b as { error?: { code?: number; status?: string } }).error;
     expect(err?.code).toBe(404);
     expect(err?.status).toBe('NOT_FOUND');
+  },
+  ollama: (b) => {
+    expect(typeof (b as { error?: unknown }).error).toBe('string');
+  },
+};
+
+// Shape assertions for an invalid_request error in each source dialect.
+// Only the openrouter target uses these: OpenRouter answers an unknown
+// model with HTTP 400 "not a valid model ID", not 404
+// (https://openrouter.ai/docs/api-reference/errors).
+const INVALID_REQUEST_CHECKS: Record<Provider, (body: unknown) => void> = {
+  openai: (b) => {
+    const err = (b as { error?: { type?: string; code?: string } }).error;
+    expect(err?.type).toBe('invalid_request_error');
+    expect(err?.code).toBe('invalid_request');
+  },
+  anthropic: (b) => {
+    const body = b as { type?: string; error?: { type?: string } };
+    expect(body.type).toBe('error');
+    expect(body.error?.type).toBe('invalid_request_error');
+  },
+  gemini: (b) => {
+    const err = (b as { error?: { code?: number; status?: string } }).error;
+    expect(err?.code).toBe(400);
+    expect(err?.status).toBe('INVALID_ARGUMENT');
   },
   ollama: (b) => {
     expect(typeof (b as { error?: unknown }).error).toBe('string');
@@ -106,15 +133,20 @@ describe.each(liveTargets().map((target) => ({ target })))(
   'live target: $target',
   ({ target }) => {
     it.each(SOURCES.map((source) => ({ source, target })))(
-      '$source → $target unknown model → 404 in source dialect',
+      '$source → $target unknown model → 404 (openrouter: 400) in source dialect',
       async ({ source, target }) => {
         useTarget(source, target);
 
         const call = chatCall(source, UNKNOWN_MODEL);
         const res = await request(app).post(call.path).send(call.body);
 
-        expect(res.status, JSON.stringify(res.body)).toBe(404);
-        NOT_FOUND_CHECKS[source](res.body);
+        // OpenRouter answers an unknown model with HTTP 400, not 404
+        // (https://openrouter.ai/docs/api-reference/errors).
+        const expectedStatus = target === 'openrouter' ? 400 : 404;
+        const checks =
+          target === 'openrouter' ? INVALID_REQUEST_CHECKS : NOT_FOUND_CHECKS;
+        expect(res.status, JSON.stringify(res.body)).toBe(expectedStatus);
+        checks[source](res.body);
       },
     );
 

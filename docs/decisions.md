@@ -1364,6 +1364,10 @@ Spec §3.4 (Anthropic messages). Non-streaming `tools` / `tool_choice` /
     forwarded `max_tokens` unchanged, as it should. 16-token live
     requests to the paid model succeed, so a capped rerun
     (`CLAUDE_CODE_MAX_OUTPUT_TOKENS` below the key's budget) may pass.
+- **OpenRouter `qwen/qwen3-coder` (the D3 model) also passed:**
+  `CLAUDE_CODE_MAX_OUTPUT_TOKENS=8000 scripts/gates/claude-code-edit.sh
+  openrouter` → `GATE PASS` in 14 s (Claude Code 2.1.311, owner's
+  machine, 2026-10-28).
 - **`CLAUDE_CODE_MAX_OUTPUT_TOKENS`** caps Claude Code's requested
   output budget; the gate script passes the caller's environment
   through, so no script change was made. Keys with a spend limit need it.
@@ -1396,9 +1400,38 @@ Spec §3.4 (Anthropic messages). Non-streaming `tools` / `tool_choice` /
     unknown model with 400 "is not a valid model ID", not 404; the
     expected status is wrong for this target (an expected-value change,
     needs owner approval).
-- **Before Task 16 / the release** the owner reruns the OpenRouter gate
-  on `qwen/qwen3-coder` (capped, or once the key has credit). The
-  nightly live suite's OpenRouter cases also need credit on
-  `OPENROUTER_API_KEY`.
+- **Before Task 16 / the release:** the nightly live suite's OpenRouter
+  cases need credit on `OPENROUTER_API_KEY`.
 - Owner decision: given in the conductor session 2026-10-28; owner to
   add sign-off.
+
+### Fix round 2 (owner live run)
+
+The owner's `npm run test:live` on 2026-10-28 (66 passed, 24 failed) —
+every failure a live-suite defect, not a babelgate defect — fixed as:
+
+- **Retired default live models** (`DEFAULT_LIVE_MODELS` in
+  `tests/live/live.helpers.ts`; `LIVE_<TARGET>_MODEL` overrides
+  unchanged): `anthropic`: `claude-3-5-haiku-latest` → `claude-haiku-5-5`
+  (upstream 404 `not_found_error`); `gemini`: `gemini-2.0-flash` →
+  `gemini-3.8-flash` (upstream 404 "no longer available"). The README
+  live-suite bullet naming the same defaults was updated to match.
+- **`chatCall` output limit for the gemini and ollama sources:**
+  `generationConfig.maxOutputTokens: 16` and `options.num_predict: 16`
+  respectively — with no limit OpenRouter assumes 65 536 tokens and
+  rejects on credit (400 "more credits, or fewer max_tokens"). Caller
+  `generationConfig`/`options` in `extra` merge over the defaults, so
+  explicit budgets still win. Request bodies only; no assertions
+  changed.
+- **OpenRouter unknown model → 400 (owner-approved expected-value
+  change).** `tests/live/errors.live.test.ts` "unknown model" case:
+  `404` + `NOT_FOUND_CHECKS` for every target → `400` +
+  `INVALID_REQUEST_CHECKS` for the `openrouter` target only (OpenRouter
+  answers an unknown model with 400 "is not a valid model ID";
+  https://openrouter.ai/docs/api-reference/errors); every other target
+  keeps 404 + `NOT_FOUND_CHECKS` unchanged. Not a provider-pair special
+  case — a test expectation for a target whose upstream status differs;
+  no `src/` change. Owner approval: given in the conductor session
+  2026-10-28; owner to add sign-off.
+- **Files outside the Files block (fix round 2):** `README.md`
+  (live-suite default model names), `docs/decisions.md` (this entry).

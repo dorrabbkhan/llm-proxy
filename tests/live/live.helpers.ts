@@ -59,9 +59,9 @@ const LIVE_BASE_URLS: Record<Provider, string> = {
 /** Cheap default model per live target; override with LIVE_<TARGET>_MODEL. */
 const DEFAULT_LIVE_MODELS: Record<Provider, string> = {
   openai: 'gpt-4o-mini',
-  gemini: 'gemini-2.0-flash',
+  gemini: 'gemini-3.8-flash',
   ollama: LIVE_OLLAMA_MODEL,
-  anthropic: 'claude-3-5-haiku-latest',
+  anthropic: 'claude-haiku-5-5',
 };
 
 /**
@@ -128,8 +128,12 @@ export function liveModel(target: LiveTarget): string {
 
 /**
  * A minimal one-message chat request in the source's wire format.
- * Gemini carries the model in the path; Anthropic and OpenAI set a
- * token limit of 16 so paid calls stay cheap.
+ * Gemini carries the model in the path. Every dialect caps output at
+ * 16 tokens (`max_tokens`, `generationConfig.maxOutputTokens`,
+ * `options.num_predict`) so paid calls stay cheap — OpenRouter treats
+ * an uncapped request as 65 536 tokens and rejects it on credit.
+ * Caller-provided fields in `extra` merge over the defaults, so
+ * explicit budgets (e.g. max_tokens 512) still win.
  */
 export function chatCall(
   source: Provider,
@@ -160,25 +164,37 @@ export function chatCall(
           ...extra,
         },
       };
-    case 'gemini':
+    case 'gemini': {
+      const { generationConfig, ...rest } = extra;
       return {
         method: 'POST',
         path: `/v1beta/models/${model}:generateContent`,
         body: {
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          ...extra,
+          generationConfig: {
+            maxOutputTokens: 16,
+            ...(generationConfig as Record<string, unknown> | undefined),
+          },
+          ...rest,
         },
       };
-    case 'ollama':
+    }
+    case 'ollama': {
+      const { options, ...rest } = extra;
       return {
         method: 'POST',
         path: '/api/chat',
         body: {
           model,
           messages: [{ role: 'user', content: prompt }],
-          ...extra,
+          options: {
+            num_predict: 16,
+            ...(options as Record<string, unknown> | undefined),
+          },
+          ...rest,
         },
       };
+    }
   }
 }
 

@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-28
+
+### Fixed
+
+- **`npx babelgate` crashed on start** with
+  `Error: unable to determine transport target for "pino-pretty"` unless
+  `NODE_ENV=production`. The logger always configured the `pino-pretty`
+  transport outside production, but `pino-pretty` is a devDependency and
+  is absent in an npm/npx install. The pretty transport is now used only
+  when it is actually resolvable; otherwise the logger writes plain JSON
+  to stdout. The Docker image (`NODE_ENV=production`) was unaffected.
+- **dotenv startup banner removed.** `dotenv.config({ quiet: true })`
+  stops dotenv 17's `◇ injected env …` line from polluting the CLI's
+  printed `export` lines.
+
+### Added
+
+- **Packed-install smoke test** (`scripts/ci/smoke-pack.sh`) in the full
+  check gate: builds, `npm pack`s, installs the tarball with
+  `--omit=dev` in a clean directory, and runs the `babelgate` bin the
+  way `npx` does — `--help` must print usage and a real start must bind
+  and answer `/health`, both free of the dotenv banner.
+- **`prepublishOnly` runs the full check** (`./scripts/check.sh`,
+  including the smoke test) so a broken pack can't reach npm again.
+
 ## [1.1.0] - 2026-10-28
 
 Public launch — "Claude Code on anything": Anthropic-format clients
@@ -153,6 +178,7 @@ gets the repository ready for outside contributors.
 - **Ollama `thinking` output is dropped** by the proxy (the canonical
   format has no field for it); planned for v1.1.
 
-[Unreleased]: https://github.com/dorrabbkhan/babelgate/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/dorrabbkhan/babelgate/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/dorrabbkhan/babelgate/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/dorrabbkhan/babelgate/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/dorrabbkhan/babelgate/releases/tag/v1.0.1

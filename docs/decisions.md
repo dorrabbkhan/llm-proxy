@@ -1477,3 +1477,48 @@ every failure a live-suite defect, not a babelgate defect — fixed as:
   `v1.0.1...v1.1.0` and `[Unreleased]` now compares `v1.1.0...HEAD`; the
   `2026-10-28` release date is final (owner-confirmed, placeholder
   wording removed); README "Running from source" uses `npm ci`.
+
+## v1.1 hotfix 1.1.1 (out of plan): `npx babelgate` crashes on start
+
+- **Bug (owner-reproduced on published 1.1.0):** `cd ~ && npx -y
+  babelgate@1.1.0 --help` crashes with `Error: unable to determine
+  transport target for "pino-pretty"` thrown from
+  `dist/utils/logger.js`. Separately, dotenv 17's
+  `◇ injected env (0) from .env // tip: …` banner prints on every start
+  and pollutes the CLI's `export` lines.
+- **Cause:** `src/utils/logger.ts` configured the `pino-pretty`
+  transport whenever `NODE_ENV !== "production"`, but `pino-pretty` is a
+  devDependency — absent in an npm/npx install. The Docker image was
+  unaffected (`NODE_ENV=production`).
+- **Why CI missed it:** every check ran with devDependencies installed,
+  so `pino-pretty` always resolved and the packed tarball was never
+  exercised the way `npx` runs it (no devDeps, `NODE_ENV` unset).
+- **Fix (owner-approved scope, no dependency change):**
+  `loggerOptions(env, canResolve)` exported from `src/utils/logger.ts`;
+  the pretty transport is used only when not production AND
+  `require.resolve("pino-pretty")` succeeds (try/catch), otherwise plain
+  JSON to stdout. Level logic unchanged. `dotenv.config({ quiet: true })`
+  in `src/config/env-config.ts` (dotenv 17 `quiet`, verified in
+  node_modules).
+- **Smoke test:** `scripts/ci/smoke-pack.sh` builds, `npm pack`s,
+  installs the tarball with `--omit=dev` into a clean dir outside the
+  repo, and runs the bin the way npx does: `--help` must exit 0 with the
+  usage line and no `injected env`; a real start must answer `/health`
+  and print the `export ANTHROPIC_BASE_URL=…` line, also banner-free.
+  Wired into `scripts/check.sh` full mode after `npm run build`, so CI
+  (which runs `./scripts/check.sh`) covers it.
+- **Publish guard (publishing-config change, owner approval flagged in
+  the PR):** `prepublishOnly: ./scripts/check.sh` in package.json.
+- **Renumbering:** the plan's Task 18 release becomes `1.1.2` (the plan
+  file itself is not edited).
+- **Files changed (all outside any plan Files block):**
+  `src/utils/logger.ts`, `src/utils/logger.test.ts`,
+  `src/config/env-config.ts`, `scripts/ci/smoke-pack.sh` (new),
+  `scripts/check.sh`, `package.json`, `package-lock.json`,
+  `CHANGELOG.md`, `docs/decisions.md`.
+- **Owner release steps after merge:** tag `v1.1.1`, `npm publish
+  --access public` (prepublishOnly runs the full check + smoke),
+  `npm deprecate babelgate@1.1.0`, verify `npx -y babelgate@1.1.1
+  --help`. Suggested (not committed — the conductor app has no
+  Workflows permission): add a `./scripts/ci/smoke-pack.sh` step before
+  the docker job's build in `.github/workflows/release.yml`.

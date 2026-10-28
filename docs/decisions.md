@@ -1431,7 +1431,7 @@ every failure a live-suite defect, not a babelgate defect — fixed as:
   https://openrouter.ai/docs/api-reference/errors); every other target
   keeps 404 + `NOT_FOUND_CHECKS` unchanged. Not a provider-pair special
   case — a test expectation for a target whose upstream status differs;
-  no `src/` change. Owner approval: given in the conductor session
-  2026-10-28; owner to add sign-off.
+  no `src/` change. Owner sign-off: Dorrabb Khan, 2026-10-28 —
+  OpenRouter unknown model → 400 approved.
 - **Files outside the Files block (fix round 2):** `README.md`
   (live-suite default model names), `docs/decisions.md` (this entry).

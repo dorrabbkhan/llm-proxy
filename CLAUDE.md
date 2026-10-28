@@ -11,9 +11,10 @@ a human decision is needed. The owner reviews PRs on GitHub and talks to you thr
 
 ## GitHub identity
 - The conductor and every Devin session act on GitHub as the **babelgate-conductor GitHub App**
-  (`babelgate-conductor[bot]`), never as the owner. Start the conductor with `scripts/conductor/start.sh`;
-  `devin.sh` and `status-comment.sh` set the identity themselves. In a session not started that way, run every
-  `gh`/`git push` through `scripts/conductor/as-app.sh` (escalation comments included).
+  (`babelgate-conductor[bot]`), never as the owner. Any Claude Code session opened in this repo gets that identity
+  automatically (SessionStart hook `scripts/conductor/session-env.sh` in `.claude/settings.json`), and `devin.sh`
+  and `status-comment.sh` set it themselves. If `printenv CONDUCTOR_ACTOR` prints nothing, the hook did not run:
+  then run every `gh`/`git push` through `scripts/conductor/as-app.sh` (escalation comments included).
 - The app cannot change settings, rules or workflows (no Administration or Workflows permission), and has
   **Actions: read only**: `live.yml` holds provider API keys and a dispatch runs the dispatched branch's code,
   so the app must not be able to start it. CI reruns and `gh workflow run` are therefore not available; rerun

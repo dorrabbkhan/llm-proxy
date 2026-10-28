@@ -1088,6 +1088,20 @@ Spec §3.4 (Anthropic messages). Non-streaming `tools` / `tool_choice` /
 - **CLA:** the CLA workflow's allowlist (`dorrabbkhan,*[bot]`) already exempts the app; its
   commits are the owner's agents acting on the owner's behalf.
 
+## Conductor: SessionStart hook sets the app identity (owner request, 2026-10-28)
+
+- **What:** `.claude/settings.json` gains a SessionStart hook running
+  `scripts/conductor/session-env.sh`, which writes absolute `export` lines (git identity and
+  credential helper, the `gh` wrapper first on PATH, `CONDUCTOR_ACTOR`) to `$CLAUDE_ENV_FILE`. Every
+  Claude Code session opened in this repo therefore acts as `babelgate-conductor[bot]`, however it
+  was started; `start.sh` stays but is optional. On a machine without the app's config the
+  hook writes nothing. CLAUDE.md and CONDUCTOR-SETUP.md describe it, with the fallback check
+  (`printenv CONDUCTOR_ACTOR` empty → use `as-app.sh`).
+- **Why:** in a plain `claude` session, the conductor's own `gh` calls (escalations, /inbox
+  acknowledgements) went out as the owner, who gets no notification for their own comments.
+- **Shell:** export lines rather than sourcing `app-env.sh`, which is bash-only; the owner's
+  shell is zsh. Verified with a fresh headless session: commits authored by the bot.
+
 ## v1.1 Task 11: Claude Code essentials
 
 - **`token-estimate.ts` lives in `src/utils/`, not `src/services/`** (Files-block

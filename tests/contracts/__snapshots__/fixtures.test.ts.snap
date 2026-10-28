@@ -545,6 +545,26 @@ exports[`Adapter golden fixtures > openai > request fixtures > tools → canonic
     },
   ],
   "model": "gpt-4",
+  "tools": [
+    {
+      "function": {
+        "description": "Get current weather",
+        "name": "get_weather",
+        "parameters": {
+          "properties": {
+            "location": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "location",
+          ],
+          "type": "object",
+        },
+      },
+      "type": "function",
+    },
+  ],
 }
 `;
 

@@ -6,12 +6,15 @@ import type {
   CanonicalContentPart,
   CanonicalError,
   CanonicalModelList,
+  IdGenerator,
   ProviderAdapter,
 } from "../../types/canonical.types";
 import {
   kindFromStatus,
   makeCanonicalError,
 } from "../../utils/canonical-error";
+import { ValidationError } from "../../utils/errors";
+import { createIdGenerator, sequentialIds } from "../../utils/ids";
 import type {
   OllamaChatRequest,
   OllamaChatResponse,
@@ -21,6 +24,18 @@ import {
   createStreamDecoder,
   createStreamEncoder,
 } from "./ollama.stream";
+import {
+  recordCallId,
+  resolveCallId,
+  resolveToolName,
+  toCanonicalToolCalls,
+  toCanonicalTools,
+  toOllamaToolCalls,
+  toOllamaTools,
+  type CallNameById,
+  type OllamaWireToolCall,
+  type PendingCallIds,
+} from "./ollama.tools";
 
 export const ollamaAdapter: ProviderAdapter<
   OllamaChatRequest,
@@ -43,10 +58,30 @@ export const ollamaAdapter: ProviderAdapter<
 export function toCanonicalRequest(
   request: OllamaChatRequest,
 ): CanonicalRequest {
-  const messages: CanonicalMessage[] = (request.messages || []).map((m) => ({
-    role: m.role as CanonicalMessage["role"],
-    content: extractContent(m),
-  }));
+  // Wire ids are kept when present; id-less calls draw call_0, call_1,…
+  // (docs/decisions.md "v1.1 Task 3" convention).
+  const ids = sequentialIds();
+  // Tool results carry only `tool_name` on the wire (docs.ollama.com
+  // api.md "Chat request (With history, with tools)"); pair each one
+  // with the earliest unconsumed earlier call of that name (FIFO).
+  const pendingByName: PendingCallIds = new Map();
+  const messages: CanonicalMessage[] = (request.messages || []).map((m) => {
+    const out: CanonicalMessage = {
+      role: m.role as CanonicalMessage["role"],
+      content: extractContent(m),
+    };
+    const wireCalls = m.tool_calls as OllamaWireToolCall[] | undefined;
+    if (wireCalls && wireCalls.length > 0) {
+      out.toolCalls = toCanonicalToolCalls(wireCalls, ids);
+      for (const tc of out.toolCalls) {
+        recordCallId(pendingByName, tc.function.name, tc.id);
+      }
+    }
+    if (typeof m.tool_name === "string" && m.tool_name.length > 0) {
+      out.toolCallId = resolveCallId(pendingByName, m.tool_name) ?? m.tool_name;
+    }
+    return out;
+  });
 
   // Extract system prompt from first system message
   const systemMsg = messages.find((m) => m.role === "system");
@@ -76,6 +111,10 @@ export function toCanonicalRequest(
   // explicit true survives, keeping the request round-trip idempotent.
   if (request.stream === true) {
     result.stream = true;
+  }
+
+  if (request.tools && request.tools.length > 0) {
+    result.tools = toCanonicalTools(request.tools);
   }
 
   return result;
@@ -114,14 +153,39 @@ function extractContent(
 export function fromCanonicalRequest(
   request: CanonicalRequest,
 ): OllamaChatRequest {
-  const messages: OllamaMessage[] = request.messages.map((m) =>
-    convertToOllamaMessage(m),
-  );
+  // Ollama has no tool_choice parameter (api.md "Tool calling"); auto
+  // (or absent) is its only behaviour. Anything else → 400.
+  if (request.toolChoice !== undefined && request.toolChoice !== "auto") {
+    const value =
+      typeof request.toolChoice === "string"
+        ? request.toolChoice
+        : JSON.stringify(request.toolChoice);
+    throw new ValidationError(
+      `Ollama does not support tool_choice "${value}"`,
+    );
+  }
+
+  // `tool_name` on a result is looked up from the matching assistant
+  // call in the same request (Ollama carries names, not call ids).
+  // The lookup is built while walking the messages, so a tool message
+  // resolves only against calls that come BEFORE it.
+  const callNameById: CallNameById = new Map();
+  const messages: OllamaMessage[] = request.messages.map((m) => {
+    const out = convertToOllamaMessage(m, callNameById);
+    for (const tc of m.toolCalls ?? []) {
+      callNameById.set(tc.id, tc.function.name);
+    }
+    return out;
+  });
 
   const result: OllamaChatRequest = {
     model: request.model,
     messages,
   };
+
+  if (request.tools && request.tools.length > 0) {
+    result.tools = toOllamaTools(request.tools);
+  }
 
   // Convert config to options
   if (request.config) {
@@ -147,7 +211,10 @@ export function fromCanonicalRequest(
   return result;
 }
 
-function convertToOllamaMessage(msg: CanonicalMessage): OllamaMessage {
+function convertToOllamaMessage(
+  msg: CanonicalMessage,
+  callNameById: CallNameById,
+): OllamaMessage {
   const result: OllamaMessage = {
     role: msg.role as OllamaMessage["role"],
     content: "",
@@ -172,6 +239,16 @@ function convertToOllamaMessage(msg: CanonicalMessage): OllamaMessage {
     }
   }
 
+  if (msg.toolCalls && msg.toolCalls.length > 0) {
+    result.tool_calls = toOllamaToolCalls(
+      msg.toolCalls,
+    ) as unknown as OllamaMessage["tool_calls"];
+  }
+
+  if (msg.role === "tool") {
+    result.tool_name = resolveToolName(callNameById, msg.toolCallId);
+  }
+
   return result;
 }
 
@@ -180,15 +257,29 @@ function convertToOllamaMessage(msg: CanonicalMessage): OllamaMessage {
 export function toCanonicalResponse(
   response: OllamaChatResponse,
   model: string,
+  ids: IdGenerator = createIdGenerator(),
 ): CanonicalResponse {
+  const message: CanonicalMessage = {
+    role: "assistant",
+    content: response.message?.content ?? "",
+  };
+  const wireCalls = response.message?.tool_calls as
+    | OllamaWireToolCall[]
+    | undefined;
+  if (wireCalls && wireCalls.length > 0) {
+    message.toolCalls = toCanonicalToolCalls(wireCalls, ids);
+  }
   return {
     id: `ollama-${randomUUID()}`,
     model,
-    message: {
-      role: "assistant",
-      content: response.message?.content ?? "",
-    },
-    finishReason: response.done ? "stop" : "unknown",
+    message,
+    // A reply ending in tool calls is a "tool_call" finish — the same
+    // rule the stream decoder applies (docs/decisions.md "v1.1 Task 6").
+    finishReason: message.toolCalls
+      ? "tool_call"
+      : response.done
+        ? "stop"
+        : "unknown",
     usage: {
       inputTokens: response.prompt_eval_count ?? 0,
       outputTokens: response.eval_count ?? 0,
@@ -207,6 +298,12 @@ export function fromCanonicalResponse(
     typeof response.message.content === "string"
       ? response.message.content
       : "";
+  const toolCalls = response.message.toolCalls;
+  // "stop" covers canonical "tool_call": recorded Ollama answers that
+  // end in tool calls report done_reason "stop".
+  const stopped =
+    response.finishReason === "stop" ||
+    response.finishReason === "tool_call";
 
   return {
     model: response.model,
@@ -214,9 +311,13 @@ export function fromCanonicalResponse(
     message: {
       role: "assistant",
       content,
-    },
-    done: response.finishReason === "stop",
-    done_reason: response.finishReason === "stop" ? "stop" : "length",
+      ...(toolCalls &&
+        toolCalls.length > 0 && {
+          tool_calls: toOllamaToolCalls(toolCalls),
+        }),
+    } as OllamaChatResponse["message"],
+    done: stopped,
+    done_reason: stopped ? "stop" : "length",
     total_duration: 0,
     load_duration: 0,
     prompt_eval_count: response.usage?.inputTokens ?? 0,

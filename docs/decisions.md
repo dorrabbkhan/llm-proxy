@@ -1331,3 +1331,74 @@ Spec §3.4 (Anthropic messages). Non-streaming `tools` / `tool_choice` /
   `.gitignore` (`!/scripts/gates/fixtures/**` negation after the `*.js`
   rule — the PR's own follow-up note; the gate fixture's `.js` files no
   longer need force-add), `docs/decisions.md` (this entry).
+
+### Edit gate run (owner decision on D3, 2026-10-28)
+
+- **D3 deviation: the PR #31 gate ran on OpenRouter
+  `poolside/laguna-s-2.1:free`, not on `qwen3-coder:30b` or
+  `qwen/qwen3-coder`.** `scripts/gates/claude-code-edit.sh openrouter
+  poolside/laguna-s-2.1:free` → `GATE PASS` in 36 s (Claude Code 2.1.311,
+  run on the owner's machine with `CLAUDE_CODE_MAX_OUTPUT_TOKENS=16000`).
+  This shows Claude Code completing the edit task through babelgate on a
+  real remote model; it does not cover the Qwen models D3 names. What
+  was tried:
+  - **Local `qwen3-coder:30b`:** doesn't fit the owner's laptop (30 GB
+    RAM, no usable GPU, CPU-only Ollama in Docker). Loading it hit a
+    global OOM: llama-server reached 17 GB RSS — Ollama's fit check
+    projected 7.5 GB host memory and left out the 13.4 GB `CPU_REPACK`
+    buffer — and systemd-oomd killed GNOME Shell. The owner has no
+    machine large enough, so a local 30B run is not planned.
+  - **Local `qwen2.5-coder:7b` (tried as a lighter stand-in):** `GATE
+    FAIL` after 500 s. Memory was fine (≥ 13 GB free throughout), but
+    CPU prompt processing ran at ~34 tokens/s, so a ~10.5k-token Claude
+    Code request takes ~5 min before the first byte; the first call
+    hit the 300 s stream idle timeout (D5, unchanged) and the one reply
+    that completed emitted its tool call as text in a ```json block,
+    not a native tool call (the "local models call tools unreliably"
+    risk in the spec). No babelgate defect found.
+  - **OpenRouter `qwen/qwen3-coder` (paid):** the owner's key has only
+    a small remaining budget. OpenRouter rejected the request before
+    the model ran (Claude Code's default 65 536 `max_tokens` exceeded
+    the 40 000 tokens the key could afford); `qwen/qwen3-coder:free`
+    returns 404 "This model is unavailable for free". babelgate
+    forwarded `max_tokens` unchanged, as it should. 16-token live
+    requests to the paid model succeed, so a capped rerun
+    (`CLAUDE_CODE_MAX_OUTPUT_TOKENS` below the key's budget) may pass.
+- **`CLAUDE_CODE_MAX_OUTPUT_TOKENS`** caps Claude Code's requested
+  output budget; the gate script passes the caller's environment
+  through, so no script change was made. Keys with a spend limit need it.
+- **Ollama path: Claude Code gate not run; accepted risk (owner
+  decision).** Every route to a capable model on Ollama was blocked:
+  local `qwen3-coder:30b` doesn't fit and local `qwen2.5-coder:7b` is
+  too slow on CPU (above), and Ollama Cloud needs paid credits
+  (`qwen3-coder:480b-cloud` → 400 "retired on July 15, 2026";
+  `glm-5.3-flash:cloud` → 400 "Add usage credits"). The cloud runs did
+  confirm the error path: upstream 400s reached Claude Code through
+  babelgate intact. What the gate checks is covered in two halves:
+  Claude Code end to end through babelgate by the OpenRouter pass
+  above, and the Ollama adapter against a real Ollama server by the
+  live suite (`qwen2.5:0.5b`, nightly in CI). Not covered: Claude Code
+  ↔ Ollama on a capable model; rerun `scripts/gates/claude-code-edit.sh
+  ollama <model>` when credits or a GPU are available.
+- **Local live-suite run, owner's machine, 2026-10-28:** 66 passed,
+  24 failed (90). Every `ollama`-target case passed, including all 10
+  streaming and tool cases in `stream.live.test.ts`. The 24 failures
+  are test-suite defects, not babelgate defects, and go to fix round 2:
+  - 8 `anthropic`-target and 8 `gemini`-target cases: the default live
+    models are retired upstream (`claude-3-5-haiku-latest` → 404;
+    `gemini-2.0-flash` → 404 "no longer available").
+  - 4 `openrouter` cases from the `gemini`/`ollama` sources:
+    `chatCall` sets no output limit for those dialects
+    (`tests/live/live.helpers.ts`), so OpenRouter assumes 65 536 tokens
+    and rejects on credit; the `openai`/`anthropic` sources send
+    `max_tokens: 16` and pass.
+  - 4 `openrouter` "unknown model → 404" cases: OpenRouter answers an
+    unknown model with 400 "is not a valid model ID", not 404; the
+    expected status is wrong for this target (an expected-value change,
+    needs owner approval).
+- **Before Task 16 / the release** the owner reruns the OpenRouter gate
+  on `qwen/qwen3-coder` (capped, or once the key has credit). The
+  nightly live suite's OpenRouter cases also need credit on
+  `OPENROUTER_API_KEY`.
+- Owner decision: given in the conductor session 2026-10-28; owner to
+  add sign-off.

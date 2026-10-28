@@ -150,6 +150,8 @@ export function createStreamDecoder(
           out.push({ type: "text_delta", text: delta.text });
         } else if (delta.type === "thinking_delta") {
           logDrop("thinking_delta");
+        } else if (delta.type === "signature_delta") {
+          logDrop("signature_delta");
         } else if (delta.type === "input_json_delta") {
           const toolIndex = toolIndexByWire.get(index);
           if (
@@ -164,7 +166,7 @@ export function createStreamDecoder(
             });
           }
         }
-        // thinking_delta, signature_delta, citations_delta → nothing
+        // citations_delta and anything else → nothing
         break;
       }
       case "content_block_stop": {

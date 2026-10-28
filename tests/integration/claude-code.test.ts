@@ -153,6 +153,55 @@ describe("Claude Code essentials (spec §3.5)", () => {
     expect(capturedRequests.ollama).toHaveLength(0);
   });
 
+  it("count_tokens accepts a body without max_tokens", async () => {
+    // Claude Code sends count_tokens without max_tokens (it isn't
+    // creating a message) — model, messages, system and tools.
+    const body = {
+      model: "claude-sonnet-4-20250514",
+      system: "You are Claude Code, Anthropic's official CLI.",
+      messages: [{ role: "user", content: "count my tokens" }],
+      tools: [
+        {
+          name: "Bash",
+          description: "Run a shell command",
+          input_schema: {
+            type: "object",
+            properties: { command: { type: "string" } },
+            required: ["command"],
+          },
+        },
+      ],
+    };
+
+    const res = await request(app)
+      .post("/v1/messages/count_tokens")
+      .send(body);
+
+    expect(res.status).toBe(200);
+    expect(res.headers["x-babelgate-token-estimate"]).toBe("true");
+    expect(res.body).toEqual({
+      input_tokens: estimateInputTokens(
+        toCanonicalRequest(
+          body as Parameters<typeof toCanonicalRequest>[0],
+        ),
+      ),
+    });
+    expect(capturedRequests.ollama).toHaveLength(0);
+  });
+
+  it("count_tokens malformed body → 400 in the Anthropic dialect", async () => {
+    const res = await request(app)
+      .post("/v1/messages/count_tokens")
+      .send({ model: "claude-sonnet-4-20250514", messages: "not-an-array" });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({
+      type: "error",
+      error: { type: "invalid_request_error" },
+    });
+    expect(capturedRequests.ollama).toHaveLength(0);
+  });
+
   it("count_tokens on a non-anthropic source is 404", async () => {
     setPair("openai", "ollama");
 

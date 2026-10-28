@@ -15,7 +15,10 @@ import { app } from "../../src/app";
 import { resetConfig } from "../../src/config/env-config";
 import { PROVIDER_PATHS, type Provider } from "../../src/transformers";
 import { reassembleStream } from "../../src/utils/stream-reassemble";
-import type { CanonicalStreamEvent } from "../../src/types/canonical.types";
+import type {
+  CanonicalResponse,
+  CanonicalStreamEvent,
+} from "../../src/types/canonical.types";
 import {
   upstreamHandlers,
   capturedRequests,
@@ -23,7 +26,7 @@ import {
   resetOverrides,
   resetStreamCase,
   streamCase,
-  nonStreamBody,
+  nonStreamSource,
   MOCK_BASE_URLS,
 } from "../mocks/upstreams";
 import openaiFixtures from "../fixtures/openai.json";
@@ -230,23 +233,39 @@ function streamFixture(provider: Provider, caseName: Case): StreamFixture {
   ) as StreamFixture;
 }
 
-/** The calls the upstream reply carries, in the comparison shape. */
+/** The calls a canonical response carries, in the comparison shape. */
+function canonicalCalls(response: CanonicalResponse): ExpectedCall[] {
+  return (response.message.toolCalls ?? []).map((tc) => ({
+    id: tc.id,
+    name: tc.function.name,
+    args: JSON.parse(tc.function.arguments),
+  }));
+}
+
+/**
+ * The calls the upstream reply carries, drawn only from the recorded
+ * oracle. When the mock serves a recorded body (named fixture
+ * response or recorded non-streaming twin) the expectation parses
+ * that recording; when it derives the body from documented
+ * expectedEvents the expectation is `reassembleStream` of those
+ * events directly — never re-parsed from the adapter-derived body, so
+ * a misconfigured or zero-call body cannot pass vacuously.
+ */
 function expectedCalls(
   target: Provider,
   caseName: Case,
   streaming: boolean,
 ): ExpectedCall[] {
   if (streaming) {
-    const response = reassembleStream(
-      streamFixture(target, caseName).expectedEvents,
+    return canonicalCalls(
+      reassembleStream(streamFixture(target, caseName).expectedEvents),
     );
-    return (response.message.toolCalls ?? []).map((tc) => ({
-      id: tc.id,
-      name: tc.function.name,
-      args: JSON.parse(tc.function.arguments),
-    }));
   }
-  return providerCalls(target, nonStreamBody(target));
+  const source = nonStreamSource(target);
+  if ("expectedEvents" in source) {
+    return canonicalCalls(reassembleStream(source.expectedEvents));
+  }
+  return providerCalls(target, source.body);
 }
 
 function expectedText(
@@ -258,7 +277,12 @@ function expectedText(
     return reassembleStream(streamFixture(target, caseName).expectedEvents)
       .message.content as string;
   }
-  return providerText(target, nonStreamBody(target));
+  const source = nonStreamSource(target);
+  if ("expectedEvents" in source) {
+    return reassembleStream(source.expectedEvents).message
+      .content as string;
+  }
+  return providerText(target, source.body);
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -567,16 +591,42 @@ describe("launch-pair matrix (spec §4.5)", () => {
         : clientJsonReply(source, res.body);
 
       if (caseName === "text" || caseName === "after_tool_result") {
+        const expected = expectedText(target, caseName, streaming);
+        expect(
+          expected.length,
+          "oracle text must be non-empty",
+        ).toBeGreaterThan(0);
         expect(reply.calls).toEqual([]);
-        expect(reply.text).toBe(
-          expectedText(target, caseName, streaming),
-        );
+        expect(reply.text).toBe(expected);
       } else {
         const expected = expectedCalls(target, caseName, streaming);
+        // Exact count and names are pinned by the oracle: tool_call →
+        // exactly 1 call, parallel_tool_calls → exactly 2 — so a
+        // misconfigured mock can't pass with [] == [].
+        const wantCalls = caseName === "tool_call" ? 1 : 2;
+        expect(
+          expected.length,
+          `oracle must carry ${wantCalls} call(s) for ${caseName}`,
+        ).toBe(wantCalls);
+        expect(
+          expected.every(
+            (c) =>
+              typeof c.name === "string" &&
+              c.name.length > 0 &&
+              typeof c.id === "string" &&
+              c.id.length > 0,
+          ),
+          "oracle calls must carry names and ids",
+        ).toBe(true);
         expect(reply.calls).toEqual(expected);
-        expect(new Set(reply.calls.map((c) => c.id)).size).toBe(
-          reply.calls.length,
-        );
+        expect(
+          new Set(expected.map((c) => c.id)).size,
+          "oracle call ids must be distinct",
+        ).toBe(wantCalls);
+        expect(
+          new Set(reply.calls.map((c) => c.id)).size,
+          "client call ids must be distinct",
+        ).toBe(reply.calls.length);
       }
 
       if (caseName === "text") return;

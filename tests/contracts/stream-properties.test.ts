@@ -5,9 +5,11 @@ import { adapters, type Provider } from "../../src/transformers";
 import { reassembleStream } from "../../src/utils/stream-reassemble";
 import { parseToolArguments } from "../../src/utils/tool-args";
 import { sequentialIds } from "../../src/utils/ids";
+import { estimateInputTokens } from "../../src/utils/token-estimate";
 import type {
   CanonicalResponse,
   CanonicalStreamEvent,
+  CanonicalUsage,
 } from "../../src/types/canonical.types";
 
 /**
@@ -15,24 +17,28 @@ import type {
  *
  * (a) "<provider> decode(encode(events)) equals events" — 200 random
  *     valid event sequences per adapter from a seeded mulberry32
- *     generator (the case seed is printed on failure). Wire formats
- *     differ in what they can carry, so equality is asserted on the
- *     REASSEMBLED stream rather than event-by-event:
+ *     generator (the case seed is printed on failure). The decoded
+ *     events are compared EVENT BY EVENT against
+ *     `wireNormalForm(provider, events)` — the exact sequence that
+ *     provider's wire can carry, since wires differ in what they can
+ *     express:
  *       - Anthropic buffers each call's arguments and writes one
  *         normalized JSON delta at tool_call_end — the plan's
  *         documented exception;
  *       - Ollama and Gemini likewise buffer per canonical index and
  *         emit each call whole at tool_call_end;
  *       - OpenAI has no wire position for tool_call_end (its decoder
- *         closes calls at the finish chunk) and emits usage at [DONE]
- *         regardless of the event's position;
+ *         closes calls at the finish chunk), emits usage at [DONE]
+ *         regardless of the event's position, and cannot carry an
+ *         empty-string arguments delta;
  *       - Ollama has no message id — its decoder generates one
- *         ("call_0" under sequentialIds).
- *     The reassembled {message, finishReason, usage} must be identical;
- *     tool arguments compare in wire form (the raw JSON string for
- *     OpenAI, the parseToolArguments-normalized object for the others —
- *     the same rule the encoders apply, including the
- *     `_invalid_arguments` wrapper).
+ *         ("call_0" under sequentialIds) — and always reports usage.
+ *     The reassembled {message, finishReason, usage} is asserted too,
+ *     as an additional end-to-end check; tool arguments compare in
+ *     wire form (the raw JSON string for OpenAI, the
+ *     parseToolArguments-normalized object for the others — the same
+ *     rule the encoders apply, including the `_invalid_arguments`
+ *     wrapper).
  *
  * (b) "<provider>/<case> stream reassembles to the non-streaming twin"
  *     — for every fixture carrying a `nonStreaming` body, decoding the
@@ -117,6 +123,9 @@ const ARGS_POOL = [
   '{"location":"Paris"}',
   '{"a":2,"b":3}',
   "{}",
+  // "" exercises the empty-arguments edge (Review Focus 5):
+  // Anthropic/Gemini/Ollama clients must get {}.
+  "",
   '{"city":"Berlin","ok":true,"tags":["x","y"]}',
   "not json",
   "[1,2]",
@@ -291,6 +300,216 @@ function decode(
   return events;
 }
 
+// ---------- wire normal forms ----------
+//
+// `wireNormalForm(provider, events)` rewrites a generated event
+// sequence into the exact sequence that provider's wire can carry —
+// what `decode(encode(events))` must equal, event by event. Each
+// rewrite below names the encoder/decoder line it comes from and is a
+// genuine wire limitation: message ids (except Ollama's), text-delta
+// boundaries, interleaved tool deltas, ids, names and raw argument
+// strings round-trip verbatim.
+
+/** What the decoder emits as the terminal `usage` event. */
+function decodedUsage(
+  provider: Provider,
+  usage: CanonicalUsage | undefined,
+): CanonicalUsage | undefined {
+  switch (provider) {
+    case "anthropic": {
+      // The decoder always emits usage at message_stop: input_tokens
+      // comes from the encoded `usage` event's message_delta field,
+      // or — when no usage event was encoded — from the message_start
+      // estimate the encoder writes (anthropic.stream.ts:
+      // `usage: { input_tokens: estimatedInput, ... }` on
+      // message_start; `input_tokens` on message_delta only
+      // `...(usage && ...)`). output_tokens is always written
+      // (`usage?.outputTokens ?? 0`).
+      const input = usage?.inputTokens ?? ANTHROPIC_ESTIMATED_INPUT;
+      const output = usage?.outputTokens ?? 0;
+      return {
+        inputTokens: input,
+        outputTokens: output,
+        totalTokens: input + output,
+      };
+    }
+    case "ollama": {
+      // The decoder always emits usage on `done: true`
+      // (ollama.stream.ts handleObject); the encoder's done line
+      // carries `usage?.inputTokens ?? 0` / `usage?.outputTokens ?? 0`.
+      const input = usage?.inputTokens ?? 0;
+      const output = usage?.outputTokens ?? 0;
+      return {
+        inputTokens: input,
+        outputTokens: output,
+        totalTokens: input + output,
+      };
+    }
+    default:
+      // OpenAI/Gemini emit usage only when the sequence carried one
+      // (openai: the `choices: []` usage chunk is held into [DONE];
+      // gemini: usageMetadata is attached to the finish element only
+      // when `usage !== undefined`).
+      return usage;
+  }
+}
+
+/**
+ * Collapse each generated tool call into the three events the wire
+ * carries. Anthropic, Gemini and Ollama all buffer `id`/`name`/
+ * concatenated `argumentsDelta`s keyed by canonical `index` until
+ * `tool_call_end`, then write the whole call at once — the plan's
+ * named exception (anthropic.stream.ts `case "tool_call_end"`:
+ * content_block_start{tool_use} + ONE input_json_delta whose
+ * `partial_json` is `JSON.stringify(parsed.args)` +
+ * content_block_stop; gemini.stream.ts `toolCallChunk`: one
+ * functionCall element with `args: parsed.args`; ollama.stream.ts
+ * `toolCallLine`: one message.tool_calls line with `arguments:
+ * parsed.args`). Their decoders emit start + one delta + end at that
+ * position, the delta being `JSON.stringify(parseToolArguments(args).args)`
+ * for all three. Non-tool events between a call's start and end stay
+ * in their order before the collapsed group; `usage` is held into the
+ * terminal event in all three encoders (`case "usage"` stores it and
+ * returns "") and emitted just before `message_end`.
+ */
+function collapseBufferedCalls(
+  events: CanonicalStreamEvent[],
+): { out: CanonicalStreamEvent[]; usage: CanonicalUsage | undefined } {
+  const calls = new Map<number, { id: string; name: string; args: string }>();
+  const out: CanonicalStreamEvent[] = [];
+  let usage: CanonicalUsage | undefined;
+  for (const event of events) {
+    switch (event.type) {
+      case "tool_call_start":
+        calls.set(event.index, {
+          id: event.id,
+          name: event.name,
+          args: "",
+        });
+        break;
+      case "tool_call_delta": {
+        const call = calls.get(event.index);
+        if (call) call.args += event.argumentsDelta;
+        break;
+      }
+      case "tool_call_end": {
+        const call = calls.get(event.index);
+        if (!call) break;
+        calls.delete(event.index);
+        out.push(
+          {
+            type: "tool_call_start",
+            index: event.index,
+            id: call.id,
+            name: call.name,
+          },
+          {
+            type: "tool_call_delta",
+            index: event.index,
+            argumentsDelta: JSON.stringify(
+              parseToolArguments(call.args).args,
+            ),
+          },
+          event,
+        );
+        break;
+      }
+      case "usage":
+        usage = event.usage;
+        break;
+      default:
+        out.push(event);
+    }
+  }
+  return { out, usage };
+}
+
+// The input-token count Anthropic's decoder reports when the sequence
+// carried no usage event: the encoder stamps the locally estimated
+// input tokens of the client's request into message_start.usage
+// (anthropic.stream.ts, `estimateInputTokens(toCanonicalRequest(
+// ctx.sourceRequest))`).
+const ANTHROPIC_ESTIMATED_INPUT = estimateInputTokens(
+  adapters.anthropic.toCanonicalRequest(
+    SOURCE_REQUESTS.anthropic.sourceRequest,
+  ),
+);
+
+/**
+ * The exact canonical event sequence `decode(encode(events))`
+ * produces per provider — only what the wire genuinely cannot carry
+ * is normalised:
+ * - openai: `tool_call_end` encodes to nothing (openai.stream.ts
+ *   `case "tool_call_end": return ""`); the decoder closes every open
+ *   call in start order at the finish chunk (`closeAll` in
+ *   handleChunk on `choice.finish_reason`), so ends collect just
+ *   before the trailing usage/message_end. `usage` is held by the
+ *   decoder and emitted at `[DONE]` (handleLine), so it sits just
+ *   before `message_end`, after the ends. A `tool_call_delta` with
+ *   `argumentsDelta: ""` is dropped: the decoder only emits a delta
+ *   for a non-empty `function.arguments` string
+ *   (`tc.function.arguments.length > 0`), and an empty delta leaves
+ *   the concatenated arguments unchanged — the wire cannot carry it.
+ * - anthropic/gemini/ollama: each call collapses to
+ *   [tool_call_start, one tool_call_delta, tool_call_end] at the
+ *   position of its `tool_call_end` (see collapseBufferedCalls);
+ *   usage is emitted just before `message_end` per decodedUsage.
+ * - ollama additionally has no message id on the wire: the decoder
+ *   generates one (`id: ids()` in ollama.stream.ts handleObject →
+ *   "call_0" under sequentialIds).
+ */
+function wireNormalForm(
+  provider: Provider,
+  events: CanonicalStreamEvent[],
+): CanonicalStreamEvent[] {
+  if (provider === "openai") {
+    const startOrder: number[] = [];
+    const endByIndex = new Map<number, CanonicalStreamEvent>();
+    const out: CanonicalStreamEvent[] = [];
+    let usage: CanonicalStreamEvent | undefined;
+    for (const event of events) {
+      switch (event.type) {
+        case "tool_call_start":
+          startOrder.push(event.index);
+          out.push(event);
+          break;
+        case "tool_call_delta":
+          if (event.argumentsDelta !== "") out.push(event);
+          break;
+        case "tool_call_end":
+          endByIndex.set(event.index, event);
+          break;
+        case "usage":
+          usage = event;
+          break;
+        default:
+          out.push(event);
+      }
+    }
+    const tail = startOrder
+      .map((index) => endByIndex.get(index))
+      .filter((e): e is CanonicalStreamEvent => e !== undefined);
+    if (usage) tail.push(usage);
+    const endAt = out.findIndex((e) => e.type === "message_end");
+    out.splice(endAt, 0, ...tail);
+    return out;
+  }
+
+  const { out, usage } = collapseBufferedCalls(events);
+  const usageEvent = decodedUsage(provider, usage);
+  const endAt = out.findIndex((e) => e.type === "message_end");
+  if (usageEvent) {
+    out.splice(endAt, 0, { type: "usage", usage: usageEvent });
+  }
+  if (provider === "ollama") {
+    const first = out[0];
+    if (first?.type === "message_start") {
+      out[0] = { ...first, id: "call_0" };
+    }
+  }
+  return out;
+}
+
 /** The reply shape the round-trip must preserve (see file header). */
 function normalized(response: CanonicalResponse, provider: Provider) {
   return {
@@ -345,6 +564,16 @@ describe("stream round-trip properties", () => {
         );
       }
 
+      // Event-by-event: decode(encode(events)) must equal exactly what
+      // this wire can carry (see wireNormalForm for each rewrite and
+      // the encoder/decoder line it comes from).
+      expect(
+        decodedEvents,
+        `seed ${seed}: decoded events must equal ` +
+          `wireNormalForm(${provider}, events)`,
+      ).toEqual(wireNormalForm(provider, events));
+
+      // Additional end-to-end check: the reassembled reply is equal too.
       const expected = reassembleStream(events);
       const actual = reassembleStream(decodedEvents);
       expect(

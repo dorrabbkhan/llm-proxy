@@ -81,30 +81,50 @@ const CASE_RESPONSE: Record<Provider, Record<string, string>> = {
 };
 
 /**
- * The non-stream reply for a provider's selected streamCase: "text"
- * serves the recorded basic response; cases with a named fixture
- * response use it; otherwise the recorded non-streaming twin
- * (<case>.nonstreaming.json or the `nonStreaming` field) — or, failing
- * all of those, the case's documented stream events reassembled and
- * re-encoded in the provider's dialect.
+ * What a non-streaming request gets for the provider's selected
+ * streamCase: either `{body}` — a recorded reply ("text" →
+ * `responses.basic`, a named fixture response, or the recorded
+ * non-streaming twin `<case>.nonstreaming.json` / the `nonStreaming`
+ * field) — or `{expectedEvents}` when no recording exists, which
+ * nonStreamBody reassembles and re-encodes in the provider's dialect.
+ * Tests use this to pick expectations from the same oracle the mock
+ * serves, so the derive path is never asserted by re-parsing the
+ * adapter-derived body.
  */
-export function nonStreamBody(provider: Provider): unknown {
+export function nonStreamSource(
+  provider: Provider,
+): { body: unknown } | { expectedEvents: CanonicalStreamEvent[] } {
   const name = streamCase[provider] ?? "text";
-  if (name === "text") return FIXTURE_RESPONSES[provider].basic;
+  if (name === "text") return { body: FIXTURE_RESPONSES[provider].basic };
   const key = CASE_RESPONSE[provider][name];
-  if (key !== undefined) return FIXTURE_RESPONSES[provider][key];
+  if (key !== undefined) {
+    return { body: FIXTURE_RESPONSES[provider][key] };
+  }
   const dir = join(__dirname, "..", "fixtures", "streams", provider);
   const twin = join(dir, `${name}.nonstreaming.json`);
   if (existsSync(twin)) {
-    return JSON.parse(readFileSync(twin, "utf8")) as unknown;
+    return { body: JSON.parse(readFileSync(twin, "utf8")) as unknown };
   }
   const meta = JSON.parse(
     readFileSync(join(dir, `${name}.json`), "utf8"),
   ) as { nonStreaming?: unknown; expectedEvents: CanonicalStreamEvent[] };
-  if (meta.nonStreaming != null) return meta.nonStreaming;
-  return adapters[provider].fromCanonicalResponse(
-    reassembleStream(meta.expectedEvents),
-  );
+  if (meta.nonStreaming != null) return { body: meta.nonStreaming };
+  return { expectedEvents: meta.expectedEvents };
+}
+
+/**
+ * The non-stream reply for a provider's selected streamCase —
+ * nonStreamSource's recorded body, or the case's documented stream
+ * events reassembled and re-encoded in the provider's dialect.
+ */
+export function nonStreamBody(provider: Provider): unknown {
+  const source = nonStreamSource(provider);
+  if ("expectedEvents" in source) {
+    return adapters[provider].fromCanonicalResponse(
+      reassembleStream(source.expectedEvents),
+    );
+  }
+  return source.body;
 }
 
 const WIRE_EXT: Record<Provider, string> = {

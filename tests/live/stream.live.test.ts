@@ -195,8 +195,8 @@ describe.each(TARGETS.map((target) => ({ target })))(
           // asked for it (stream_options.include_usage).
           extra.stream_options = { include_usage: true };
         }
-        if (target === 'ollama') {
-          // Same budget as chat.live.test.ts — a local model may need
+        if (target === 'ollama' || target === 'openrouter') {
+          // Same budget as chat.live.test.ts — these targets may need
           // room to finish before the token cap.
           extra.max_tokens = 512;
         }

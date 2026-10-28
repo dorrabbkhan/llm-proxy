@@ -1304,3 +1304,30 @@ Spec §3.4 (Anthropic messages). Non-streaming `tools` / `tool_choice` /
   fixture's failing `sum.test.js` is picked up by vitest's default include
   and would break `npm test`), `docs/decisions.md` (this entry),
   `.github/workflows/live.yml` (patch only, see above — not committed).
+
+### Fix round 1 (review of PR #31)
+
+- **Stale live stream case replaced (owner-approved expected-value
+  change).** `tests/live/errors.live.test.ts`:
+  `"$source → $target stream:true → 501 in source dialect"` →
+  `"$source → $target stream:true → 200 stream in source dialect"` —
+  asserts status 200, the source's streaming content type (SSE for
+  openai/anthropic/gemini, NDJSON for ollama) and a terminal event in the
+  source dialect (`data: [DONE]`, `data: {"type":"message_stop"}`,
+  last-frame `candidates[0].finishReason === "STOP"`, `done: true`
+  NDJSON line), mirroring `tests/integration/stream.test.ts`. Gemini
+  still signals streaming in the path — the case uses
+  `:streamGenerateContent?alt=sse`. `UNSUPPORTED_CHECKS` removed
+  (nothing else used it). The file is outside the task's Files block.
+  Owner approval: given in the conductor session 2026-10-28; owner to
+  add sign-off.
+- **OpenRouter `streams text` token budget:** the case relied on
+  `chatCall`'s 16-token `max_tokens` default, which can truncate before
+  a text delta or usage; the `openrouter` target now gets the same 512
+  budget as `ollama`. The other openrouter cases (`accepts tool
+  definitions`, `forced tool call`) already set explicit budgets.
+- **Files outside the Files block (fix round 1):**
+  `tests/live/errors.live.test.ts` (expected-value change above),
+  `.gitignore` (`!/scripts/gates/fixtures/**` negation after the `*.js`
+  rule — the PR's own follow-up note; the gate fixture's `.js` files no
+  longer need force-add), `docs/decisions.md` (this entry).

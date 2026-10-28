@@ -3,6 +3,8 @@
 *.js
 # Keep TypeScript declaration files if you publish a package
 !/src/**/*.d.ts
+# Keep the Claude Code gate fixture's plain .js files
+!/scripts/gates/fixtures/**
 
 # Node.js dependencies
 /node_modules/

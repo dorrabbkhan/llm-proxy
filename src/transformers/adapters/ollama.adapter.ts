@@ -6,7 +6,6 @@ import type {
   CanonicalContentPart,
   CanonicalError,
   CanonicalModelList,
-  CanonicalToolCall,
   IdGenerator,
   ProviderAdapter,
 } from "../../types/canonical.types";
@@ -16,8 +15,6 @@ import {
 } from "../../utils/canonical-error";
 import { ValidationError } from "../../utils/errors";
 import { createIdGenerator, sequentialIds } from "../../utils/ids";
-import { parseToolArguments } from "../../utils/tool-args";
-import { logger } from "../../utils/logger";
 import type {
   OllamaChatRequest,
   OllamaChatResponse,
@@ -27,6 +24,18 @@ import {
   createStreamDecoder,
   createStreamEncoder,
 } from "./ollama.stream";
+import {
+  recordCallId,
+  resolveCallId,
+  resolveToolName,
+  toCanonicalToolCalls,
+  toCanonicalTools,
+  toOllamaToolCalls,
+  toOllamaTools,
+  type CallNameById,
+  type OllamaWireToolCall,
+  type PendingCallIds,
+} from "./ollama.tools";
 
 export const ollamaAdapter: ProviderAdapter<
   OllamaChatRequest,
@@ -46,59 +55,6 @@ export const ollamaAdapter: ProviderAdapter<
 
 // ============ REQUEST: Ollama → Canonical ============
 
-/** Ollama wire tool call: the SDK type omits `id`/`function.index`,
- * which recorded Ollama 0.40.11 responses carry. */
-interface OllamaWireToolCall {
-  id?: string;
-  function?: {
-    index?: number;
-    name?: string;
-    arguments?: unknown;
-  };
-}
-
-function toCanonicalToolCalls(
-  toolCalls: OllamaWireToolCall[],
-  ids: IdGenerator,
-): CanonicalToolCall[] {
-  return toolCalls.map((tc) => {
-    const args = tc?.function?.arguments;
-    return {
-      id: typeof tc?.id === "string" ? tc.id : ids(),
-      type: "function" as const,
-      function: {
-        name: tc?.function?.name ?? "",
-        // `arguments` is normally an object (JSON.stringify it); a
-        // string is already the JSON encoding and passes through
-        // verbatim — same rule as the stream decoder.
-        arguments:
-          typeof args === "string" ? args : JSON.stringify(args ?? {}),
-      },
-    };
-  });
-}
-
-function toOllamaToolCalls(
-  toolCalls: CanonicalToolCall[],
-): OllamaWireToolCall[] {
-  return toolCalls.map((tc, index) => {
-    const parsed = parseToolArguments(tc.function.arguments);
-    if (!parsed.valid) {
-      logger.warn(
-        "Tool call arguments are not valid JSON; sending _invalid_arguments wrapper",
-      );
-    }
-    return {
-      id: tc.id,
-      function: {
-        index,
-        name: tc.function.name,
-        arguments: parsed.args,
-      },
-    };
-  });
-}
-
 export function toCanonicalRequest(
   request: OllamaChatRequest,
 ): CanonicalRequest {
@@ -108,7 +64,7 @@ export function toCanonicalRequest(
   // Tool results carry only `tool_name` on the wire (docs.ollama.com
   // api.md "Chat request (With history, with tools)"); pair each one
   // with the earliest unconsumed earlier call of that name (FIFO).
-  const pendingByName = new Map<string, string[]>();
+  const pendingByName: PendingCallIds = new Map();
   const messages: CanonicalMessage[] = (request.messages || []).map((m) => {
     const out: CanonicalMessage = {
       role: m.role as CanonicalMessage["role"],
@@ -118,14 +74,11 @@ export function toCanonicalRequest(
     if (wireCalls && wireCalls.length > 0) {
       out.toolCalls = toCanonicalToolCalls(wireCalls, ids);
       for (const tc of out.toolCalls) {
-        const q = pendingByName.get(tc.function.name) ?? [];
-        q.push(tc.id);
-        pendingByName.set(tc.function.name, q);
+        recordCallId(pendingByName, tc.function.name, tc.id);
       }
     }
     if (typeof m.tool_name === "string" && m.tool_name.length > 0) {
-      const q = pendingByName.get(m.tool_name);
-      out.toolCallId = q && q.length > 0 ? q.shift() : m.tool_name;
+      out.toolCallId = resolveCallId(pendingByName, m.tool_name) ?? m.tool_name;
     }
     return out;
   });
@@ -161,25 +114,7 @@ export function toCanonicalRequest(
   }
 
   if (request.tools && request.tools.length > 0) {
-    result.tools = request.tools.map((t) => {
-      if (t.type !== "function") {
-        throw new ValidationError(
-          `Unsupported Ollama tool type "${String(t.type)}"`,
-        );
-      }
-      return {
-        type: "function" as const,
-        function: {
-          name: t.function?.name ?? "",
-          ...(t.function?.description !== undefined && {
-            description: t.function.description,
-          }),
-          ...(t.function?.parameters !== undefined && {
-            parameters: t.function.parameters as Record<string, unknown>,
-          }),
-        },
-      };
-    });
+    result.tools = toCanonicalTools(request.tools);
   }
 
   return result;
@@ -232,16 +167,16 @@ export function fromCanonicalRequest(
 
   // `tool_name` on a result is looked up from the matching assistant
   // call in the same request (Ollama carries names, not call ids).
-  const callNameById = new Map<string, string>();
-  for (const m of request.messages) {
+  // The lookup is built while walking the messages, so a tool message
+  // resolves only against calls that come BEFORE it.
+  const callNameById: CallNameById = new Map();
+  const messages: OllamaMessage[] = request.messages.map((m) => {
+    const out = convertToOllamaMessage(m, callNameById);
     for (const tc of m.toolCalls ?? []) {
       callNameById.set(tc.id, tc.function.name);
     }
-  }
-
-  const messages: OllamaMessage[] = request.messages.map((m) =>
-    convertToOllamaMessage(m, callNameById),
-  );
+    return out;
+  });
 
   const result: OllamaChatRequest = {
     model: request.model,
@@ -249,20 +184,7 @@ export function fromCanonicalRequest(
   };
 
   if (request.tools && request.tools.length > 0) {
-    result.tools = request.tools.map((t) => ({
-      type: "function",
-      function: {
-        name: t.function.name,
-        ...(t.function.description !== undefined && {
-          description: t.function.description,
-        }),
-        ...(t.function.parameters !== undefined && {
-          parameters: t.function.parameters as NonNullable<
-            OllamaChatRequest["tools"]
-          >[number]["function"]["parameters"],
-        }),
-      },
-    }));
+    result.tools = toOllamaTools(request.tools);
   }
 
   // Convert config to options
@@ -291,7 +213,7 @@ export function fromCanonicalRequest(
 
 function convertToOllamaMessage(
   msg: CanonicalMessage,
-  callNameById: Map<string, string>,
+  callNameById: CallNameById,
 ): OllamaMessage {
   const result: OllamaMessage = {
     role: msg.role as OllamaMessage["role"],
@@ -324,18 +246,7 @@ function convertToOllamaMessage(
   }
 
   if (msg.role === "tool") {
-    const toolName =
-      msg.toolCallId !== undefined
-        ? callNameById.get(msg.toolCallId)
-        : undefined;
-    if (toolName === undefined) {
-      throw new ValidationError(
-        `Ollama tool message has no matching tool call for tool_call_id "${
-          msg.toolCallId ?? ""
-        }"`,
-      );
-    }
-    result.tool_name = toolName;
+    result.tool_name = resolveToolName(callNameById, msg.toolCallId);
   }
 
   return result;

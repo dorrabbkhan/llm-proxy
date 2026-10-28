@@ -15,7 +15,8 @@ import {
   kindFromStatus,
   makeCanonicalError,
 } from "../../utils/canonical-error";
-import { ValidationError } from "../../utils/errors";
+import { UpstreamError, ValidationError } from "../../utils/errors";
+import { logger } from "../../utils/logger";
 import type {
   ChatCompletionRequest,
   ChatCompletionResponse,
@@ -55,6 +56,15 @@ export function toCanonicalRequest(
       systemPrompt = extractTextContent(msg);
     }
     messages.push(convertToCanonicalMessage(msg));
+  }
+
+  // Canonical has no field for `parallel_tool_calls` (a spec
+  // non-goal) — make the drop visible instead of silent, same as
+  // Anthropic's `disable_parallel_tool_use` (task 9).
+  if (request.parallel_tool_calls !== undefined) {
+    logger.debug(
+      'Dropping request field "parallel_tool_calls" (no canonical equivalent)',
+    );
   }
 
   return {
@@ -102,6 +112,12 @@ function toCanonicalTools(
     if (tool.type !== "function" || !("function" in tool)) {
       throw new ValidationError(
         `Unsupported OpenAI tool type "${String(tool.type)}"`,
+      );
+    }
+    // `strict` has no canonical equivalent — dropped, but visibly.
+    if (tool.function.strict != null) {
+      logger.debug(
+        'Dropping tool field "strict" (no canonical equivalent)',
       );
     }
     return {
@@ -156,24 +172,23 @@ function convertToCanonicalMessage(
   }
 
   if ("tool_calls" in msg && msg.tool_calls) {
-    base.toolCalls = msg.tool_calls
-      .filter(
-        (
-          tc,
-        ): tc is {
-          id: string;
-          type: "function";
-          function: { name: string; arguments: string };
-        } => tc.type === "function" && "function" in tc,
-      )
-      .map((tc) => ({
+    base.toolCalls = msg.tool_calls.map((tc) => {
+      if (tc.type !== "function" || !("function" in tc)) {
+        // e.g. type:"custom" — no canonical equivalent; 400 naming
+        // the type rather than silently filtering the call out.
+        throw new ValidationError(
+          `OpenAI tool call type "${String(tc.type)}" is not supported`,
+        );
+      }
+      return {
         id: tc.id,
         type: "function" as const,
         function: {
           name: tc.function.name,
           arguments: tc.function.arguments,
         },
-      }));
+      };
+    });
   }
 
   if ("tool_call_id" in msg && msg.tool_call_id) {
@@ -372,24 +387,27 @@ export function toCanonicalResponse(
   };
 
   if (choice?.message?.tool_calls) {
-    message.toolCalls = choice.message.tool_calls
-      .filter(
-        (
-          tc,
-        ): tc is {
-          id: string;
-          type: "function";
-          function: { name: string; arguments: string };
-        } => tc.type === "function" && "function" in tc,
-      )
-      .map((tc) => ({
+    message.toolCalls = choice.message.tool_calls.map((tc) => {
+      if (tc.type !== "function" || !("function" in tc)) {
+        // e.g. type:"custom" — an upstream wire shape canonical
+        // cannot express; error naming the type (kind "upstream",
+        // like the stream decoder's undecodable-chunk error) rather
+        // than returning an empty toolCalls.
+        throw new UpstreamError(
+          `Upstream openai sent unsupported tool call type "${String(
+            tc.type,
+          )}"`,
+        );
+      }
+      return {
         id: tc.id,
         type: "function" as const,
         function: {
           name: tc.function.name,
           arguments: tc.function.arguments,
         },
-      }));
+      };
+    });
   }
 
   return {

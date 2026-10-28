@@ -529,6 +529,115 @@ describe("Ollama Adapter", () => {
       );
     });
 
+    it("ollama decode pairs two same-name results with their calls in order", () => {
+      const input = {
+        model: "qwen2.5:0.5b",
+        messages: [
+          { role: "user", content: "weather in Paris and London?" },
+          {
+            role: "assistant",
+            content: "",
+            tool_calls: [
+              {
+                id: "call_paris",
+                function: {
+                  index: 0,
+                  name: "get_weather",
+                  arguments: { location: "Paris" },
+                },
+              },
+              {
+                id: "call_london",
+                function: {
+                  index: 1,
+                  name: "get_weather",
+                  arguments: { location: "London" },
+                },
+              },
+            ],
+          },
+          { role: "tool", tool_name: "get_weather", content: "15 degrees" },
+          { role: "tool", tool_name: "get_weather", content: "10 degrees" },
+        ],
+      } as OllamaChatRequest;
+
+      const result = toCanonicalRequest(input);
+
+      expect(result.messages[2].role).toBe("tool");
+      expect(result.messages[2].toolCallId).toBe("call_paris");
+      expect(result.messages[3].role).toBe("tool");
+      expect(result.messages[3].toolCallId).toBe("call_london");
+    });
+
+    it("ollama unmatched tool_name is kept and fails on Ollama encode", () => {
+      const input = {
+        model: "qwen2.5:0.5b",
+        messages: [
+          { role: "user", content: "hi" },
+          { role: "tool", tool_name: "get_weather", content: "15 degrees" },
+        ],
+      } as OllamaChatRequest;
+
+      const canonical = toCanonicalRequest(input);
+      expect(canonical.messages[1].toolCallId).toBe("get_weather");
+
+      expect(() => fromCanonicalRequest(canonical)).toThrow(ValidationError);
+      expect(() => fromCanonicalRequest(canonical)).toThrow(/get_weather/);
+    });
+
+    it("ollama string arguments pass through verbatim", () => {
+      const input = {
+        model: "qwen2.5:0.5b",
+        messages: [
+          {
+            role: "assistant",
+            content: "",
+            tool_calls: [
+              {
+                function: {
+                  index: 0,
+                  name: "get_weather",
+                  arguments: '{"location":"Paris"}',
+                },
+              },
+            ],
+          },
+        ],
+      } as OllamaChatRequest;
+
+      const result = toCanonicalRequest(input);
+
+      expect(result.messages[0].toolCalls?.[0]?.function.arguments).toBe(
+        '{"location":"Paris"}',
+      );
+    });
+
+    it("ollama tool message resolves only against an earlier assistant call", () => {
+      const input: CanonicalRequest = {
+        model: "qwen2.5:0.5b",
+        messages: [
+          { role: "tool", content: "15 degrees", toolCallId: "call_late" },
+          {
+            role: "assistant",
+            content: "",
+            toolCalls: [
+              {
+                id: "call_late",
+                type: "function",
+                function: {
+                  name: "get_weather",
+                  arguments: "{}",
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      expect(() => fromCanonicalRequest(input)).toThrow(ValidationError);
+      expect(() => fromCanonicalRequest(input)).toThrow(/call_late/);
+    });
+
     it("ollama invalid canonical arguments become the wrapper", () => {
       const input: CanonicalResponse = {
         id: "ollama-test",

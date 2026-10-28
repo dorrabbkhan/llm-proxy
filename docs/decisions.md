@@ -879,6 +879,46 @@ Files outside the Files block:
 `tests/contracts/__snapshots__/fixtures.test.ts.snap` (the one entry
 above, owner-approved) and `docs/decisions.md` (this entry).
 
+Fix round 1:
+- `src/transformers/adapters/ollama.tools.ts` (new, 180 lines) —
+  file outside the Files block: the Ollama tool-call conversion and
+  name-resolution helpers moved out of `ollama.adapter.ts`
+  (477 → 388 lines) for AGENTS.md rule 7 (single-purpose, ~400
+  lines), same pattern as `gemini.tools.ts` /
+  `anthropic.messages.ts`. Imported only by `ollama.adapter.ts`;
+  `ollama.stream.ts` is untouched (it takes
+  `toCanonicalError`/`fromCanonicalError` from the adapter). No
+  behaviour change.
+- OpenAI `function.strict` and `parallel_tool_calls` have no
+  canonical equivalent (`parallel_tool_calls` is a spec non-goal):
+  still dropped, now with a `logger.debug` naming only the field —
+  `Dropping tool field "strict" (no canonical equivalent)` and
+  `Dropping request field "parallel_tool_calls" (no canonical
+  equivalent)`, the same pattern Task 9 uses for Anthropic's
+  `disable_parallel_tool_use`. The request is not rejected.
+- OpenAI `type:"custom"` entries in `message.tool_calls` were
+  silently filtered on both decode paths, leaving `toolCalls: []`
+  under a `tool_call` finish. Request decode now throws
+  `ValidationError` → 400 `invalid_request` in the OpenAI dialect;
+  response decode throws `UpstreamError` → status 502, canonical
+  kind `upstream` — the unrepresentable shape came from the
+  upstream, not the client (so not 400) and it is not a proxy bug
+  (so not 500 `internal`): the same kind the stream decoders emit
+  for undecodable upstream chunks. Both messages name only the
+  type, never call names or arguments.
+- Ollama encode builds the call-id → name lookup while walking the
+  messages, so a tool message resolves only against an assistant
+  call that precedes it in the request; a result whose call appears
+  only later hits the existing ValidationError naming the id.
+- Tests added: `openai strict and parallel_tool_calls are dropped
+  with a debug log naming the field`, `openai custom tool_call in a
+  request → 400 naming the type`, `openai custom tool_call in a
+  response → error naming the type`, `ollama tool message resolves
+  only against an earlier assistant call`, `ollama decode pairs two
+  same-name results with their calls in order`, `ollama unmatched
+  tool_name is kept and fails on Ollama encode`, `ollama string
+  arguments pass through verbatim`.
+
 ## v1.1 Task 10: Gemini tools (non-streaming) + toGeminiSchema
 
 - Spec sections implemented: §3.4 Gemini row —

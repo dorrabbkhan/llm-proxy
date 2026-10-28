@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   toCanonicalRequest,
   fromCanonicalRequest,
@@ -6,6 +6,8 @@ import {
   fromCanonicalResponse,
   fromCanonicalModelList,
 } from './openai.adapter';
+import { UpstreamError, ValidationError } from '../../utils/errors';
+import { logger } from '../../utils/logger';
 import type { CanonicalRequest, CanonicalResponse } from '../../types/canonical.types';
 import type { ChatCompletionRequest, ChatCompletionResponse } from '../../types/openai.types';
 
@@ -266,6 +268,116 @@ describe('OpenAI Adapter', () => {
         const restored = fromCanonicalRequest(canonical);
         expect(restored.tool_choice).toEqual(tool_choice);
       }
+    });
+
+    it('openai strict and parallel_tool_calls are dropped with a debug log naming the field', () => {
+      const debugSpy = vi.spyOn(logger, 'debug');
+      const input = {
+        model: 'gpt-4',
+        messages: [{ role: 'user', content: 'Hi' }],
+        parallel_tool_calls: false,
+        tools: [
+          {
+            type: 'function' as const,
+            function: {
+              name: 'get_weather',
+              strict: true,
+              parameters: {
+                type: 'object',
+                properties: { location: { type: 'string' } },
+              },
+            },
+          },
+        ],
+      } as ChatCompletionRequest;
+
+      const canonical = toCanonicalRequest(input);
+
+      // The request still decodes — the drop is only made visible.
+      expect(canonical.tools?.[0]?.function.name).toBe('get_weather');
+      expect(debugSpy).toHaveBeenCalledWith(
+        expect.stringContaining('"strict"'),
+      );
+      expect(debugSpy).toHaveBeenCalledWith(
+        expect.stringContaining('"parallel_tool_calls"'),
+      );
+      expect(debugSpy).toHaveBeenCalledTimes(2);
+      // Field names only — never values or tool names.
+      for (const call of debugSpy.mock.calls) {
+        expect(call).toHaveLength(1);
+        expect(String(call[0])).not.toContain('get_weather');
+      }
+      debugSpy.mockRestore();
+    });
+
+    it('openai custom tool_call in a request → 400 naming the type', () => {
+      const input = {
+        model: 'gpt-4',
+        messages: [
+          {
+            role: 'assistant' as const,
+            content: null,
+            tool_calls: [
+              {
+                id: 'call_1',
+                type: 'custom' as const,
+                custom: { name: 'code_exec', input: 'print(1)' },
+              },
+            ],
+          },
+        ],
+      } as ChatCompletionRequest;
+
+      let err: unknown;
+      try {
+        toCanonicalRequest(input);
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(ValidationError);
+      expect((err as ValidationError).statusCode).toBe(400);
+      expect((err as Error).message).toContain('"custom"');
+      expect((err as Error).message).not.toContain('code_exec');
+      expect((err as Error).message).not.toContain('print(1)');
+    });
+
+    it('openai custom tool_call in a response → error naming the type', () => {
+      const input = {
+        id: 'chatcmpl-1',
+        object: 'chat.completion' as const,
+        created: 0,
+        model: 'gpt-4',
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: 'assistant' as const,
+              content: null,
+              tool_calls: [
+                {
+                  id: 'call_1',
+                  type: 'custom' as const,
+                  custom: { name: 'code_exec', input: 'print(1)' },
+                },
+              ],
+            },
+            finish_reason: 'tool_calls' as const,
+            logprobs: null,
+          },
+        ],
+      } as ChatCompletionResponse;
+
+      let err: unknown;
+      try {
+        toCanonicalResponse(input, 'gpt-4');
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(UpstreamError);
+      expect((err as UpstreamError).statusCode).toBe(502);
+      expect((err as Error).message).toContain('"custom"');
+      expect((err as Error).message).not.toContain('code_exec');
+      expect((err as Error).message).not.toContain('print(1)');
     });
 
     it('openai tools definitions pass through', () => {

@@ -226,8 +226,8 @@ npm run test:live
   `qwen2.5:0.5b`).
 - **Paid providers are opt-in**: OpenAI, Anthropic and Gemini cases run
   only when `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` are
-  set, with cheap defaults `gpt-4o-mini`, `claude-3-5-haiku-latest` and
-  `gemini-2.0-flash` respectively — `LIVE_<PROVIDER>_MODEL` overrides.
+  set, with cheap defaults `gpt-4o-mini`, `claude-haiku-5-5` and
+  `gemini-3.8-flash` respectively — `LIVE_<PROVIDER>_MODEL` overrides.
   Skipped targets are listed in the output.
 - Cases per available target, driven through every source format: a chat
   round trip, the model list, an unknown model → 404, and `stream: true`

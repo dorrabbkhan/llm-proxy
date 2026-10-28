@@ -1256,3 +1256,187 @@ Spec §3.4 (Anthropic messages). Non-streaming `tools` / `tool_choice` /
 - **Files outside the Files block:** `docs/decisions.md` (this entry; the
   task's Files block lists `src/cli.ts`, `src/cli.test.ts`, `package.json` and
   `src/index.ts`).
+
+## v1.1 Task 15: live streaming/tools suite + Claude Code edit gate
+
+- **OpenRouter base URL is `https://openrouter.ai/api`, not the plan's
+  `https://openrouter.ai/api/v1` (plan defect).** Upstream URLs are built by
+  plain concatenation — `${targetBaseUrl}${requestPath}` in
+  `proxy.service.ts` — and the OpenAI request path already carries `/v1`
+  (`/v1/chat/completions`). With `/api/v1` the upstream URL would be
+  `/api/v1/v1/chat/completions`. OpenRouter's documented endpoint is
+  `https://openrouter.ai/api/v1/chat/completions`
+  (https://openrouter.ai/docs/api-reference/overview), so the base must be
+  `https://openrouter.ai/api`. Applied in `liveTargets()`/`useTarget`
+  (`tests/live/live.helpers.ts`) and in
+  `scripts/gates/claude-code-edit.sh` (`--base-url https://openrouter.ai/api`).
+- **`.github/workflows/live.yml` is not in this commit.** The conductor app
+  has no Workflows permission, so the one-line env addition
+  (`OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}` on the
+  "Run the live suite" step) is attached to the PR description as a patch
+  for the owner to apply.
+- **`"openrouter"` is a `LiveTarget`, not a `Provider`** — the union type
+  lives in `tests/live/live.helpers.ts`; no `src/` type changed. It borrows
+  the OpenAI provider: `useTarget` sets `TARGET_API=openai` with the
+  OpenRouter base URL and `OPENROUTER_API_KEY`, and restores the real
+  `OPENAI_API_KEY`/`OPENAI_API_BASE_URL` for other targets so the borrowed
+  credentials can't leak into real `openai` cases in the same process.
+- **Forced tool call covers both sources** on the openrouter target:
+  OpenAI `tool_choice: "required"` and Anthropic `tool_choice: {"type":"any"}`
+  — both map to canonical `"required"`, which the OpenAI adapter sends
+  upstream as `"required"` (OpenRouter forwards `tool_choice` per
+  https://openrouter.ai/docs/api-reference/overview; Anthropic documents
+  `type:"any"` as "must use a tool" at
+  https://docs.anthropic.com/en/api/messages).
+- **Gate flags from `claude --help` 2.1.311:** `-p`,
+  `--permission-prompts none` (denies anything that would prompt),
+  `--allowedTools "Edit" "Write" "Bash(npm test)"` (file edits and
+  `npm test` only), `--strict-mcp-config` and `--setting-sources local`
+  (the temp dir has no `.claude`, so user/project/MCP config can't widen
+  the tool set). `ANTHROPIC_API_KEY`/`ANTHROPIC_MODEL` are unset for the
+  run so the printed `ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN` decide
+  routing; the auth token is the client-facing proxy token the CLI prints.
+- **`OLLAMA_API_BASE_URL` default in the gate:** env-config requires
+  `<TARGET>_API_BASE_URL` for the selected target, so the ollama run
+  supplies `http://localhost:11434` when the env doesn't set it.
+- **Files outside the Files block:** `vitest.config.ts` (added
+  `scripts/gates/fixtures/**` to the vitest exclude — the edit-task
+  fixture's failing `sum.test.js` is picked up by vitest's default include
+  and would break `npm test`), `docs/decisions.md` (this entry),
+  `.github/workflows/live.yml` (patch only, see above — not committed).
+
+### Fix round 1 (review of PR #31)
+
+- **Stale live stream case replaced (owner-approved expected-value
+  change).** `tests/live/errors.live.test.ts`:
+  `"$source → $target stream:true → 501 in source dialect"` →
+  `"$source → $target stream:true → 200 stream in source dialect"` —
+  asserts status 200, the source's streaming content type (SSE for
+  openai/anthropic/gemini, NDJSON for ollama) and a terminal event in the
+  source dialect (`data: [DONE]`, `data: {"type":"message_stop"}`,
+  last-frame `candidates[0].finishReason === "STOP"`, `done: true`
+  NDJSON line), mirroring `tests/integration/stream.test.ts`. Gemini
+  still signals streaming in the path — the case uses
+  `:streamGenerateContent?alt=sse`. `UNSUPPORTED_CHECKS` removed
+  (nothing else used it). The file is outside the task's Files block.
+  Owner sign-off: Dorrabb Khan, 2026-10-28 — 501→200 live stream case approved.
+- **OpenRouter `streams text` token budget:** the case relied on
+  `chatCall`'s 16-token `max_tokens` default, which can truncate before
+  a text delta or usage; the `openrouter` target now gets the same 512
+  budget as `ollama`. The other openrouter cases (`accepts tool
+  definitions`, `forced tool call`) already set explicit budgets.
+- **Files outside the Files block (fix round 1):**
+  `tests/live/errors.live.test.ts` (expected-value change above),
+  `.gitignore` (`!/scripts/gates/fixtures/**` negation after the `*.js`
+  rule — the PR's own follow-up note; the gate fixture's `.js` files no
+  longer need force-add), `docs/decisions.md` (this entry).
+
+### Edit gate run (owner decision on D3, 2026-10-28)
+
+- **D3 deviation: the PR #31 gate ran on OpenRouter
+  `poolside/laguna-s-2.1:free`, not on `qwen3-coder:30b` or
+  `qwen/qwen3-coder`.** `scripts/gates/claude-code-edit.sh openrouter
+  poolside/laguna-s-2.1:free` → `GATE PASS` in 36 s (Claude Code 2.1.311,
+  run on the owner's machine with `CLAUDE_CODE_MAX_OUTPUT_TOKENS=16000`).
+  This shows Claude Code completing the edit task through babelgate on a
+  real remote model; it does not cover the Qwen models D3 names. What
+  was tried:
+  - **Local `qwen3-coder:30b`:** doesn't fit the owner's laptop (30 GB
+    RAM, no usable GPU, CPU-only Ollama in Docker). Loading it hit a
+    global OOM: llama-server reached 17 GB RSS — Ollama's fit check
+    projected 7.5 GB host memory and left out the 13.4 GB `CPU_REPACK`
+    buffer — and systemd-oomd killed GNOME Shell. The owner has no
+    machine large enough, so a local 30B run is not planned.
+  - **Local `qwen2.5-coder:7b` (tried as a lighter stand-in):** `GATE
+    FAIL` after 500 s. Memory was fine (≥ 13 GB free throughout), but
+    CPU prompt processing ran at ~34 tokens/s, so a ~10.5k-token Claude
+    Code request takes ~5 min before the first byte; the first call
+    hit the 300 s stream idle timeout (D5, unchanged) and the one reply
+    that completed emitted its tool call as text in a ```json block,
+    not a native tool call (the "local models call tools unreliably"
+    risk in the spec). No babelgate defect found.
+  - **OpenRouter `qwen/qwen3-coder` (paid):** the owner's key has only
+    a small remaining budget. OpenRouter rejected the request before
+    the model ran (Claude Code's default 65 536 `max_tokens` exceeded
+    the 40 000 tokens the key could afford); `qwen/qwen3-coder:free`
+    returns 404 "This model is unavailable for free". babelgate
+    forwarded `max_tokens` unchanged, as it should. 16-token live
+    requests to the paid model succeed, so a capped rerun
+    (`CLAUDE_CODE_MAX_OUTPUT_TOKENS` below the key's budget) may pass.
+- **OpenRouter `qwen/qwen3-coder` (the D3 model) also passed:**
+  `CLAUDE_CODE_MAX_OUTPUT_TOKENS=8000 scripts/gates/claude-code-edit.sh
+  openrouter` → `GATE PASS` in 14 s (Claude Code 2.1.311, owner's
+  machine, 2026-10-28).
+- **`CLAUDE_CODE_MAX_OUTPUT_TOKENS`** caps Claude Code's requested
+  output budget; the gate script passes the caller's environment
+  through, so no script change was made. Keys with a spend limit need it.
+- **Ollama path: Claude Code gate not run; accepted risk (owner
+  decision).** Every route to a capable model on Ollama was blocked:
+  local `qwen3-coder:30b` doesn't fit and local `qwen2.5-coder:7b` is
+  too slow on CPU (above), and Ollama Cloud needs paid credits
+  (`qwen3-coder:480b-cloud` → 400 "retired on July 15, 2026";
+  `glm-5.3-flash:cloud` → 400 "Add usage credits"). The cloud runs did
+  confirm the error path: upstream 400s reached Claude Code through
+  babelgate intact. What the gate checks is covered in two halves:
+  Claude Code end to end through babelgate by the OpenRouter pass
+  above, and the Ollama adapter against a real Ollama server by the
+  live suite (`qwen2.5:0.5b`, nightly in CI). Not covered: Claude Code
+  ↔ Ollama on a capable model; rerun `scripts/gates/claude-code-edit.sh
+  ollama <model>` when credits or a GPU are available.
+- **Local live-suite run, owner's machine, 2026-10-28:** 66 passed,
+  24 failed (90). Every `ollama`-target case passed, including all 10
+  streaming and tool cases in `stream.live.test.ts`. The 24 failures
+  are test-suite defects, not babelgate defects, and go to fix round 2:
+  - 8 `anthropic`-target and 8 `gemini`-target cases: the default live
+    models are retired upstream (`claude-3-5-haiku-latest` → 404;
+    `gemini-2.0-flash` → 404 "no longer available").
+  - 4 `openrouter` cases from the `gemini`/`ollama` sources:
+    `chatCall` sets no output limit for those dialects
+    (`tests/live/live.helpers.ts`), so OpenRouter assumes 65 536 tokens
+    and rejects on credit; the `openai`/`anthropic` sources send
+    `max_tokens: 16` and pass.
+  - 4 `openrouter` "unknown model → 404" cases: OpenRouter answers an
+    unknown model with 400 "is not a valid model ID", not 404; the
+    expected status is wrong for this target (an expected-value change,
+    needs owner approval).
+- **Before Task 16 / the release:** the nightly live suite's OpenRouter
+  cases need credit on `OPENROUTER_API_KEY`.
+- **Gemini target merged without a clean live rerun:** the `gemini`
+  chat and stream cases failed only on the free-tier quota (429) and a
+  503 "high demand"; `gemini-3.8-flash` itself resolves (the model-list
+  cases pass). Run the gemini target live once on a fresh quota or a
+  paid tier before the release.
+- Owner sign-off: Dorrabb Khan, 2026-10-28 — D3 deviation accepted
+  (OpenRouter gate passed on qwen/qwen3-coder; Ollama Claude Code gate
+  not run, accepted risk); merging without the Gemini live rerun.
+
+### Fix round 2 (owner live run)
+
+The owner's `npm run test:live` on 2026-10-28 (66 passed, 24 failed) —
+every failure a live-suite defect, not a babelgate defect — fixed as:
+
+- **Retired default live models** (`DEFAULT_LIVE_MODELS` in
+  `tests/live/live.helpers.ts`; `LIVE_<TARGET>_MODEL` overrides
+  unchanged): `anthropic`: `claude-3-5-haiku-latest` → `claude-haiku-5-5`
+  (upstream 404 `not_found_error`); `gemini`: `gemini-2.0-flash` →
+  `gemini-3.8-flash` (upstream 404 "no longer available"). The README
+  live-suite bullet naming the same defaults was updated to match.
+- **`chatCall` output limit for the gemini and ollama sources:**
+  `generationConfig.maxOutputTokens: 16` and `options.num_predict: 16`
+  respectively — with no limit OpenRouter assumes 65 536 tokens and
+  rejects on credit (400 "more credits, or fewer max_tokens"). Caller
+  `generationConfig`/`options` in `extra` merge over the defaults, so
+  explicit budgets still win. Request bodies only; no assertions
+  changed.
+- **OpenRouter unknown model → 400 (owner-approved expected-value
+  change).** `tests/live/errors.live.test.ts` "unknown model" case:
+  `404` + `NOT_FOUND_CHECKS` for every target → `400` +
+  `INVALID_REQUEST_CHECKS` for the `openrouter` target only (OpenRouter
+  answers an unknown model with 400 "is not a valid model ID";
+  https://openrouter.ai/docs/api-reference/errors); every other target
+  keeps 404 + `NOT_FOUND_CHECKS` unchanged. Not a provider-pair special
+  case — a test expectation for a target whose upstream status differs;
+  no `src/` change. Owner sign-off: Dorrabb Khan, 2026-10-28 —
+  OpenRouter unknown model → 400 approved.
+- **Files outside the Files block (fix round 2):** `README.md`
+  (live-suite default model names), `docs/decisions.md` (this entry).

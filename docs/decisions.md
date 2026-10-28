@@ -1143,3 +1143,55 @@ Spec §3.4 (Anthropic messages). Non-streaming `tools` / `tool_choice` /
   integer (`ConfigurationError` otherwise); forwarding and completion log
   lines carry both `model` (mapped, upstream-bound) and `requestedModel`
   (client's name) per §3.5 "logs show both".
+
+## v1.1 Task 12: property tests + launch-pair matrix
+
+- **`decode(encode(events))` is asserted event by event** against `wireNormalForm(provider, events)` —
+  the exact sequence each wire can carry — with the reassembled `{message, finishReason, usage}` kept
+  as an additional end-to-end check. The normal form rewrites only what the wire genuinely cannot
+  carry, each rule documented with the encoder/decoder line it comes from: Anthropic/Gemini/Ollama
+  collapse each call to `[tool_call_start, one tool_call_delta =
+  JSON.stringify(parseToolArguments(args).args), tool_call_end]` at the position of its `tool_call_end`
+  (the plan's named exception; non-tool events between start and end keep their order); OpenAI moves
+  `tool_call_end`s to just before the trailing usage/`message_end` in start order (its decoder closes
+  calls at the finish chunk), moves `usage` to just before `message_end` (emitted at `[DONE]`), and
+  drops empty `tool_call_delta`s (the decoder only emits non-empty `function.arguments`); Ollama
+  replaces `message_start.id` with the decoder-generated `"call_0"` and always reports usage.
+  Everything else — message ids, text-delta boundaries, interleaved deltas, ids, names and raw
+  argument strings — round-trips verbatim. The reassembled check still compares tool arguments in wire
+  form (raw JSON string for OpenAI, `parseToolArguments`-normalized object for the others, covering
+  the `_invalid_arguments` wrapper). `ARGS_POOL` includes `""` so the empty-arguments edge
+  (Review Focus 5: Anthropic/Gemini/Ollama clients get `{}`) is exercised. This also feeds fully
+  interleaved deltas to every encoder — the §3.1-rule-5 buffering the other tests only exercise for
+  Anthropic.
+- **Generated sequences stay inside what every wire can carry:** tool-call ends in index order
+  (out-of-order ends would renumber decoded calls — a wire limitation, not a canonical one);
+  `finishReason` is `tool_call` exactly when calls exist else `stop`/`length`; `usage.totalTokens` is
+  always input+output (Anthropic and Ollama recompute it); and usage is always generated for
+  Anthropic/Ollama, whose wire streams always carry counts (their decoders emit a usage event even when
+  the encoder saw none).
+- **`tests/mocks/upstreams.ts`**: `streamCase` now also drives non-stream replies via exported
+  `nonStreamBody(provider)`, built on the exported `nonStreamSource(provider)` selector so the
+  matrix's expectations come from the same oracle the mock serves. Resolution order: `"text"` → the
+  recorded `responses.basic`; a named fixture response (`openai.tool_call`, `anthropic.tool_use`); the
+  recorded non-streaming twin (`<case>.nonstreaming.json`, then the `<case>.json` `nonStreaming`
+  field); last, the case's documented `expectedEvents` reassembled and re-encoded in the provider's
+  dialect. The derive path exists because no recorded parallel-tool-calls non-stream body exists for
+  OpenAI/Anthropic/Gemini (fixtures are owner-only changes); it uses only oracle `expectedEvents` plus
+  the provider's own encoder.
+- **Non-stream matrix expectations are oracle-only:** when the mock serves a recorded body the
+  expectation parses that recording; on the derive path it is `reassembleStream(expectedEvents)`
+  directly — never re-parsed from the adapter-derived body — and each cell asserts the exact call
+  count, names and distinct ids (`tool_call` → 1, `parallel_tool_calls` → 2, text cases → 0 calls and
+  non-empty text) so a misconfigured or zero-call mock cannot pass vacuously.
+- **Ollama tool-case twins stay out of the twin property** because `<case>.nonstreaming.json` is a
+  separate live recording whose call ids differ from the stream's — Ollama keeps the wire tool-call
+  ids (`ollama.tools.ts`; only the message id is a generated UUID), so the differing ids are real and
+  the fixtures mark `nonStreaming: null`.
+- **Files outside the Files block:** `docs/decisions.md` (this entry; the task's Files block lists only
+  the two new test files and `tests/mocks/upstreams.ts`).
+- **`tests/integration/stream-pairs.test.ts` is ~640 lines and `tests/contracts/stream-properties.test.ts`
+  ~645 — above the ~400 guideline.** The generated-matrix test files in this suite already run past that
+  (`stream-sdk.test.ts` 1170, `stream.test.ts` 701, `stream-decoders.test.ts` 471); each file is still
+  single-purpose, so splitting wasn't done. Task 17 can lift the source/target dialect helpers out when
+  it widens the matrix to 16 pairs.

@@ -1,7 +1,9 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { http, HttpResponse } from "msw";
-import type { Provider } from "../../src/transformers";
+import { adapters, type Provider } from "../../src/transformers";
+import { reassembleStream } from "../../src/utils/stream-reassemble";
+import type { CanonicalStreamEvent } from "../../src/types/canonical.types";
 
 import openaiFixtures from "../fixtures/openai.json";
 import geminiFixtures from "../fixtures/gemini.json";
@@ -50,13 +52,79 @@ export function resetOverrides(): void {
   }
 }
 
-/** Which stream fixture case each provider's upstream serves (default "text") */
+/**
+ * Which fixture case each provider's upstream serves (default "text").
+ * Streaming requests get the case's recorded wire bytes; non-streaming
+ * requests get nonStreamBody(provider).
+ */
 export const streamCase: Partial<Record<Provider, string>> = {};
 
 export function resetStreamCase(): void {
   for (const key of Object.keys(streamCase) as Provider[]) {
     delete streamCase[key];
   }
+}
+
+const FIXTURE_RESPONSES: Record<Provider, Record<string, unknown>> = {
+  openai: openaiFixtures.responses,
+  gemini: geminiFixtures.responses,
+  ollama: ollamaFixtures.responses,
+  anthropic: anthropicFixtures.responses,
+};
+
+// Named responses in tests/fixtures/<p>.json for cases that have one.
+const CASE_RESPONSE: Record<Provider, Record<string, string>> = {
+  openai: { tool_call: "tool_call" },
+  anthropic: { tool_call: "tool_use" },
+  ollama: {},
+  gemini: {},
+};
+
+/**
+ * What a non-streaming request gets for the provider's selected
+ * streamCase: either `{body}` — a recorded reply ("text" →
+ * `responses.basic`, a named fixture response, or the recorded
+ * non-streaming twin `<case>.nonstreaming.json` / the `nonStreaming`
+ * field) — or `{expectedEvents}` when no recording exists, which
+ * nonStreamBody reassembles and re-encodes in the provider's dialect.
+ * Tests use this to pick expectations from the same oracle the mock
+ * serves, so the derive path is never asserted by re-parsing the
+ * adapter-derived body.
+ */
+export function nonStreamSource(
+  provider: Provider,
+): { body: unknown } | { expectedEvents: CanonicalStreamEvent[] } {
+  const name = streamCase[provider] ?? "text";
+  if (name === "text") return { body: FIXTURE_RESPONSES[provider].basic };
+  const key = CASE_RESPONSE[provider][name];
+  if (key !== undefined) {
+    return { body: FIXTURE_RESPONSES[provider][key] };
+  }
+  const dir = join(__dirname, "..", "fixtures", "streams", provider);
+  const twin = join(dir, `${name}.nonstreaming.json`);
+  if (existsSync(twin)) {
+    return { body: JSON.parse(readFileSync(twin, "utf8")) as unknown };
+  }
+  const meta = JSON.parse(
+    readFileSync(join(dir, `${name}.json`), "utf8"),
+  ) as { nonStreaming?: unknown; expectedEvents: CanonicalStreamEvent[] };
+  if (meta.nonStreaming != null) return { body: meta.nonStreaming };
+  return { expectedEvents: meta.expectedEvents };
+}
+
+/**
+ * The non-stream reply for a provider's selected streamCase —
+ * nonStreamSource's recorded body, or the case's documented stream
+ * events reassembled and re-encoded in the provider's dialect.
+ */
+export function nonStreamBody(provider: Provider): unknown {
+  const source = nonStreamSource(provider);
+  if ("expectedEvents" in source) {
+    return adapters[provider].fromCanonicalResponse(
+      reassembleStream(source.expectedEvents),
+    );
+  }
+  return source.body;
 }
 
 const WIRE_EXT: Record<Provider, string> = {
@@ -127,7 +195,7 @@ export const upstreamHandlers = [
       if (wantsStream(request.url, body)) {
         return streamFixtureResponse("openai");
       }
-      return HttpResponse.json(openaiFixtures.responses.basic);
+      return HttpResponse.json(nonStreamBody("openai"));
     },
   ),
 
@@ -144,7 +212,7 @@ export const upstreamHandlers = [
     if (wantsStream(request.url, body)) {
       return streamFixtureResponse("gemini");
     }
-    return HttpResponse.json(geminiFixtures.responses.basic);
+    return HttpResponse.json(nonStreamBody("gemini"));
   }),
 
   http.post(`${MOCK_BASE_URLS.ollama}/api/chat`, async ({ request }) => {
@@ -160,7 +228,7 @@ export const upstreamHandlers = [
     if (wantsStream(request.url, body)) {
       return streamFixtureResponse("ollama");
     }
-    return HttpResponse.json(ollamaFixtures.responses.basic);
+    return HttpResponse.json(nonStreamBody("ollama"));
   }),
 
   http.post(`${MOCK_BASE_URLS.anthropic}/v1/messages`, async ({ request }) => {
@@ -176,7 +244,7 @@ export const upstreamHandlers = [
     if (wantsStream(request.url, body)) {
       return streamFixtureResponse("anthropic");
     }
-    return HttpResponse.json(anthropicFixtures.responses.basic);
+    return HttpResponse.json(nonStreamBody("anthropic"));
   }),
 
   // ===== Model list endpoints =====

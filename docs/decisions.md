@@ -1440,3 +1440,36 @@ every failure a live-suite defect, not a babelgate defect — fixed as:
   OpenRouter unknown model → 400 approved.
 - **Files outside the Files block (fix round 2):** `README.md`
   (live-suite default model names), `docs/decisions.md` (this entry).
+
+## v1.1 Task 16: README, recipes, CHANGELOG, `1.1.0` · OWNER GATE
+
+- **Demo GIF is a marked slot, not a file.** `docs/assets/demo.gif` does
+  not exist; the README carries an HTML-comment slot
+  (`<!-- OWNER: add docs/assets/demo.gif ... -->`) the owner fills from
+  the OpenRouter gate run before merge. No binary and no rendering
+  broken image link was committed.
+- **CHANGELOG date is a placeholder.** `## [1.1.0] - 2026-10-28` uses
+  today's date; the owner sets the final date at release time (tag
+  `v1.1.0`, `npm publish` with 2FA are owner steps).
+- **OpenRouter base URL documented as `https://openrouter.ai/api`** in
+  README and recipes, matching the Task 15 correction — babelgate
+  appends `/v1/chat/completions` itself.
+- **Known limitations state the D3 deviation plainly:** the Claude Code
+  edit gate passed on OpenRouter (`qwen/qwen3-coder`,
+  `poolside/laguna-s-2.1:free`), and the Claude Code ↔ Ollama path on a
+  capable model (`qwen3-coder:30b`) was never run. README and the
+  claude-code recipe say exactly that — they do not claim a local gate
+  pass — and they warn that local models may call tools unreliably and
+  CPU-only machines can hit `UPSTREAM_STREAM_IDLE_MS`.
+- **No live-verification claims for Gemini.** The Gemini target had no
+  clean live run (free-tier 429/503), and Gemini/Ollama sources are not
+  live-verified — stated in README, CHANGELOG and decisions.
+- **`CLAUDE_CODE_MAX_OUTPUT_TOKENS` documented** in the Claude Code
+  recipe and README (spend-limited OpenRouter keys reject Claude Code's
+  default output budget; the gate passed with 8 000/16 000).
+- **Every documented flag, env var and printed line was checked against
+  the code** (`src/cli.ts`, `src/config/env-config.ts`,
+  `scripts/gates/claude-code-edit.sh`, `tests/live/live.helpers.ts`) and
+  the CLI was run locally to confirm the `--help` text and the exact
+  `export …` lines it prints.
+- **Files outside the Files block:** none.

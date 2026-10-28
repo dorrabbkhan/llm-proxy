@@ -15,6 +15,25 @@ export const LIVE_OLLAMA_URL =
 /** Model exercised against live Ollama (D5: small, CPU-friendly). */
 export const LIVE_OLLAMA_MODEL = process.env.LIVE_OLLAMA_MODEL || 'qwen2.5:0.5b';
 
+/**
+ * A live upstream the suite can target. `"openrouter"` isn't a Provider:
+ * it's reached through the OpenAI adapter with a different base URL and
+ * key, so the type stays local to tests/live/.
+ */
+export type LiveTarget = Provider | 'openrouter';
+
+/**
+ * OpenRouter base URL — `https://openrouter.ai/api`, NOT `.../api/v1`:
+ * upstream URLs are built by plain concatenation
+ * `${targetBaseUrl}${requestPath}` and the OpenAI request path already
+ * carries `/v1` (docs: https://openrouter.ai/docs/api-reference/overview).
+ */
+export const OPENROUTER_BASE_URL =
+  process.env.OPENROUTER_API_BASE_URL || 'https://openrouter.ai/api';
+
+/** Default OpenRouter model; override with LIVE_OPENROUTER_MODEL. */
+const DEFAULT_OPENROUTER_MODEL = 'qwen/qwen3-coder';
+
 const ALL_PROVIDERS: Provider[] = [
   'openai',
   'gemini',
@@ -71,18 +90,25 @@ let loggedSkipped = false;
 
 /**
  * Targets with credentials to hit: "ollama" always; the paid providers
- * only when their *_API_KEY is set. Skipped targets are logged once.
+ * only when their *_API_KEY is set; "openrouter" when OPENROUTER_API_KEY
+ * is set. Skipped targets are logged once.
  */
-export function liveTargets(): Provider[] {
-  const targets = ALL_PROVIDERS.filter(
+export function liveTargets(): LiveTarget[] {
+  const providers = ALL_PROVIDERS.filter(
     (p) => p === 'ollama' || Boolean(process.env[API_KEY_ENV[p]]),
   );
-  const skipped = ALL_PROVIDERS.filter((p) => !targets.includes(p));
+  const targets: LiveTarget[] = process.env.OPENROUTER_API_KEY
+    ? [...providers, 'openrouter']
+    : providers;
+  const skipped: LiveTarget[] = ALL_PROVIDERS.filter(
+    (p) => !providers.includes(p),
+  );
+  if (!process.env.OPENROUTER_API_KEY) skipped.push('openrouter');
   if (skipped.length > 0 && !loggedSkipped) {
     loggedSkipped = true;
     console.log(
       `live suite: skipping targets without ${skipped
-        .map((p) => API_KEY_ENV[p])
+        .map((p) => (p === 'openrouter' ? 'OPENROUTER_API_KEY' : API_KEY_ENV[p]))
         .join('/')} set: ${skipped.join(', ')}`,
     );
   }
@@ -90,7 +116,10 @@ export function liveTargets(): Provider[] {
 }
 
 /** Model to request for a live target (LIVE_<TARGET>_MODEL override). */
-export function liveModel(target: Provider): string {
+export function liveModel(target: LiveTarget): string {
+  if (target === 'openrouter') {
+    return process.env.LIVE_OPENROUTER_MODEL || DEFAULT_OPENROUTER_MODEL;
+  }
   return (
     process.env[`LIVE_${target.toUpperCase()}_MODEL`] ||
     DEFAULT_LIVE_MODELS[target]
@@ -153,16 +182,39 @@ export function chatCall(
   }
 }
 
+// Captured before any openrouter case runs so the OpenRouter key/URL
+// borrowed through the OpenAI env can't leak into a later real
+// "openai" target in the same process.
+const REAL_OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const REAL_OPENAI_API_BASE_URL = process.env.OPENAI_API_BASE_URL;
+
+function restoreOpenAIEnv(): void {
+  if (REAL_OPENAI_API_KEY === undefined) delete process.env.OPENAI_API_KEY;
+  else process.env.OPENAI_API_KEY = REAL_OPENAI_API_KEY;
+  if (REAL_OPENAI_API_BASE_URL === undefined)
+    delete process.env.OPENAI_API_BASE_URL;
+  else process.env.OPENAI_API_BASE_URL = REAL_OPENAI_API_BASE_URL;
+}
+
 /**
  * Point the in-process app at a real source → target pair and clear the
  * config cache so the next request picks it up. A pre-set
- * <TARGET>_API_BASE_URL (e.g. a gateway endpoint) is kept.
+ * <TARGET>_API_BASE_URL (e.g. a gateway endpoint) is kept. The
+ * "openrouter" target borrows the OpenAI provider: TARGET_API=openai,
+ * OpenRouter's base URL and OPENROUTER_API_KEY.
  */
-export function useTarget(source: Provider, target: Provider): void {
+export function useTarget(source: Provider, target: LiveTarget): void {
   process.env.SOURCE_API = source;
-  process.env.TARGET_API = target;
-  const baseUrlVar = `${target.toUpperCase()}_API_BASE_URL`;
-  process.env[baseUrlVar] = process.env[baseUrlVar] || LIVE_BASE_URLS[target];
+  if (target === 'openrouter') {
+    process.env.TARGET_API = 'openai';
+    process.env.OPENAI_API_BASE_URL = OPENROUTER_BASE_URL;
+    process.env.OPENAI_API_KEY = process.env.OPENROUTER_API_KEY!;
+  } else {
+    process.env.TARGET_API = target;
+    restoreOpenAIEnv();
+    const baseUrlVar = `${target.toUpperCase()}_API_BASE_URL`;
+    process.env[baseUrlVar] = process.env[baseUrlVar] || LIVE_BASE_URLS[target];
+  }
   resetConfig();
 }
 

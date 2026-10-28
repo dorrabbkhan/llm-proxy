@@ -1256,3 +1256,51 @@ Spec §3.4 (Anthropic messages). Non-streaming `tools` / `tool_choice` /
 - **Files outside the Files block:** `docs/decisions.md` (this entry; the
   task's Files block lists `src/cli.ts`, `src/cli.test.ts`, `package.json` and
   `src/index.ts`).
+
+## v1.1 Task 15: live streaming/tools suite + Claude Code edit gate
+
+- **OpenRouter base URL is `https://openrouter.ai/api`, not the plan's
+  `https://openrouter.ai/api/v1` (plan defect).** Upstream URLs are built by
+  plain concatenation — `${targetBaseUrl}${requestPath}` in
+  `proxy.service.ts` — and the OpenAI request path already carries `/v1`
+  (`/v1/chat/completions`). With `/api/v1` the upstream URL would be
+  `/api/v1/v1/chat/completions`. OpenRouter's documented endpoint is
+  `https://openrouter.ai/api/v1/chat/completions`
+  (https://openrouter.ai/docs/api-reference/overview), so the base must be
+  `https://openrouter.ai/api`. Applied in `liveTargets()`/`useTarget`
+  (`tests/live/live.helpers.ts`) and in
+  `scripts/gates/claude-code-edit.sh` (`--base-url https://openrouter.ai/api`).
+- **`.github/workflows/live.yml` is not in this commit.** The conductor app
+  has no Workflows permission, so the one-line env addition
+  (`OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}` on the
+  "Run the live suite" step) is attached to the PR description as a patch
+  for the owner to apply.
+- **`"openrouter"` is a `LiveTarget`, not a `Provider`** — the union type
+  lives in `tests/live/live.helpers.ts`; no `src/` type changed. It borrows
+  the OpenAI provider: `useTarget` sets `TARGET_API=openai` with the
+  OpenRouter base URL and `OPENROUTER_API_KEY`, and restores the real
+  `OPENAI_API_KEY`/`OPENAI_API_BASE_URL` for other targets so the borrowed
+  credentials can't leak into real `openai` cases in the same process.
+- **Forced tool call covers both sources** on the openrouter target:
+  OpenAI `tool_choice: "required"` and Anthropic `tool_choice: {"type":"any"}`
+  — both map to canonical `"required"`, which the OpenAI adapter sends
+  upstream as `"required"` (OpenRouter forwards `tool_choice` per
+  https://openrouter.ai/docs/api-reference/overview; Anthropic documents
+  `type:"any"` as "must use a tool" at
+  https://docs.anthropic.com/en/api/messages).
+- **Gate flags from `claude --help` 2.1.311:** `-p`,
+  `--permission-prompts none` (denies anything that would prompt),
+  `--allowedTools "Edit" "Write" "Bash(npm test)"` (file edits and
+  `npm test` only), `--strict-mcp-config` and `--setting-sources local`
+  (the temp dir has no `.claude`, so user/project/MCP config can't widen
+  the tool set). `ANTHROPIC_API_KEY`/`ANTHROPIC_MODEL` are unset for the
+  run so the printed `ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN` decide
+  routing; the auth token is the client-facing proxy token the CLI prints.
+- **`OLLAMA_API_BASE_URL` default in the gate:** env-config requires
+  `<TARGET>_API_BASE_URL` for the selected target, so the ollama run
+  supplies `http://localhost:11434` when the env doesn't set it.
+- **Files outside the Files block:** `vitest.config.ts` (added
+  `scripts/gates/fixtures/**` to the vitest exclude — the edit-task
+  fixture's failing `sum.test.js` is picked up by vitest's default include
+  and would break `npm test`), `docs/decisions.md` (this entry),
+  `.github/workflows/live.yml` (patch only, see above — not committed).

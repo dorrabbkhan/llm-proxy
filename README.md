@@ -266,7 +266,7 @@ a small generic error shape rather than any provider's.
 ## Running from source
 
 ```bash
-npm install
+npm ci
 cp .env.example .env
 ```
 

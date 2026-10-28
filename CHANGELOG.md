@@ -153,5 +153,6 @@ gets the repository ready for outside contributors.
 - **Ollama `thinking` output is dropped** by the proxy (the canonical
   format has no field for it); planned for v1.1.
 
-[Unreleased]: https://github.com/dorrabbkhan/babelgate/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/dorrabbkhan/babelgate/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/dorrabbkhan/babelgate/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/dorrabbkhan/babelgate/releases/tag/v1.0.1

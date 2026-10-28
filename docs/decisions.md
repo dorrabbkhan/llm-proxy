@@ -1448,9 +1448,9 @@ every failure a live-suite defect, not a babelgate defect — fixed as:
   (`<!-- OWNER: add docs/assets/demo.gif ... -->`) the owner fills from
   the OpenRouter gate run before merge. No binary and no rendering
   broken image link was committed.
-- **CHANGELOG date is a placeholder.** `## [1.1.0] - 2026-10-28` uses
-  today's date; the owner sets the final date at release time (tag
-  `v1.1.0`, `npm publish` with 2FA are owner steps).
+- **CHANGELOG release date confirmed.** `## [1.1.0] - 2026-10-28` is the
+  final release date (owner-confirmed in fix round 1). Tag `v1.1.0` and
+  `npm publish` with 2FA remain owner steps.
 - **OpenRouter base URL documented as `https://openrouter.ai/api`** in
   README and recipes, matching the Task 15 correction — babelgate
   appends `/v1/chat/completions` itself.
@@ -1473,3 +1473,7 @@ every failure a live-suite defect, not a babelgate defect — fixed as:
   the CLI was run locally to confirm the `--help` text and the exact
   `export …` lines it prints.
 - **Files outside the Files block:** none.
+- **Fix round 1:** CHANGELOG footer gains `[1.1.0]` → compare
+  `v1.0.1...v1.1.0` and `[Unreleased]` now compares `v1.1.0...HEAD`; the
+  `2026-10-28` release date is final (owner-confirmed, placeholder
+  wording removed); README "Running from source" uses `npm ci`.

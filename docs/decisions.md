@@ -919,6 +919,75 @@ Fix round 1:
   tool_name is kept and fails on Ollama encode`, `ollama string
   arguments pass through verbatim`.
 
+## v1.1 Task 9: tools for Anthropic (non-streaming)
+
+Spec §3.4 (Anthropic messages). Non-streaming `tools` / `tool_choice` /
+`tool_use` / `tool_result` mapping in `anthropic.adapter.ts`;
+`anthropic.stream.ts` untouched (Task 5 already streams tool_use).
+
+- `tools[]` ↔ canonical tools: `{name, description, input_schema}` ↔
+  `{type:"function", function:{name, description, parameters}}`.
+  `input_schema` passes through unchanged (spec §3.4: only Gemini
+  rewrites schemas). On encode `input_schema` defaults to
+  `{"type":"object"}` when canonical `parameters` is absent (the
+  Messages API requires an object schema).
+- `tool_choice` ↔ `toolChoice`: `auto`→`auto`, `any`→`required`,
+  `none`→`none`, `{type:"tool",name}`→`{type:"function",
+  function:{name}}`, and back.
+- `disable_parallel_tool_use` has no canonical field: **dropped with a
+  debug log naming only the field** (`tool_choice`
+  `disable_parallel_tool_use` has no canonical equivalent). Not a 400 —
+  the choice itself still maps; only the parallel-use hint is lost.
+- `tool_use.input` on encode is `parseToolArguments(arguments).args`:
+  `{}` for empty, the `{ "_invalid_arguments": "<raw>" }` wrapper plus
+  a warn log (without the arguments) for unparseable input. On decode
+  `arguments` is `JSON.stringify(input)`.
+- `tool_result` decode: a user message with N `tool_result` blocks → N
+  canonical `role:"tool"` messages in order, then one user message for
+  any remaining text/image blocks (spec §3.4). `tool_result.content`:
+  a string passes through; an array's **text blocks join with `"\n"`**.
+  Any non-text block in `tool_result.content` (image, document, …) →
+  `ValidationError` naming the block type → 400 in the Anthropic
+  dialect (`invalid_request_error`). Canonical tool results carry no
+  images, so this is never a silent drop.
+- `is_error` ↔ `isError`: decode maps only `is_error === true` to
+  `isError: true`; encode **omits `is_error` unless `isError ===
+  true`** (Anthropic's documented default is false).
+- Encode merges each run of consecutive canonical tool messages into
+  ONE user message of `tool_result` blocks; an assistant message's text
+  precedes its `tool_use` blocks.
+- `tools[]` entries that are server-side toolsets (no `name` — e.g.
+  `browser_toolset_*`) → `ValidationError` naming the tool type; named
+  built-in tools map by `name`/`description` (no `input_schema` → no
+  `parameters`).
+- Canonical tool messages with array content keep their parts on
+  encode (`tool_result.content` accepts text/image blocks); other
+  adapters only produce string tool content, so this path is
+  theoretical.
+- Wire-format source checked 2026-10-27: Anthropic Messages API and
+  Tool use docs (docs.claude.com / docs.anthropic.com —
+  `tools[].{name,description,input_schema}`, `tool_choice` types
+  `auto`/`any`/`tool`/`none`, `tool_use{id,name,input}`,
+  `tool_result{tool_use_id,content,is_error}`, `stop_reason:"tool_use"`).
+- **Owner decision (2026-10-27, option a):** exactly two existing
+  contract snapshot entries updated, purely additive —
+  `anthropic > request fixtures > tools → canonical matches snapshot 1`
+  gained `tools` (the fixture has no `tool_choice`, so no `toolChoice`),
+  and `anthropic > response fixtures > tool_use → canonical matches
+  snapshot 1` gained `message.toolCalls`. Updated via targeted
+  `vitest -t` runs only; committed separately as `test: update tool
+  snapshots (owner-approved, option a)`.
+- File split (AGENTS.md rule 7): the message/content/tool conversion
+  layer moved to `src/transformers/adapters/anthropic.messages.ts`
+  (~317 lines; the adapter would otherwise be ~660). The adapter
+  imports it one-way; it depends only on `src/types` and `src/utils`,
+  same as `anthropic.stream.ts`.
+- Files outside the Files block: `docs/decisions.md` (this entry —
+  required by the task to record the mapping choices and the owner
+  approval),
+  `src/transformers/adapters/anthropic.messages.ts` (the split above),
+  and `tests/contracts/__snapshots__/fixtures.test.ts.snap` (the two
+  entries above, per the owner decision).
 ## v1.1 Task 10: Gemini tools (non-streaming) + toGeminiSchema
 
 - Spec sections implemented: §3.4 Gemini row —

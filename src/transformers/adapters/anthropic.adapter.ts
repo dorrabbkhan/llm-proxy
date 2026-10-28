@@ -3,12 +3,11 @@ import type {
   CanonicalRequest,
   CanonicalResponse,
   CanonicalMessage,
-  CanonicalContentPart,
   CanonicalError,
   CanonicalErrorKind,
   CanonicalFinishReason,
-  CanonicalImage,
   CanonicalModelList,
+  CanonicalToolCall,
   ProviderAdapter,
 } from "../../types/canonical.types";
 import {
@@ -18,15 +17,23 @@ import {
 import type {
   MessageCreateParams,
   Message,
-  MessageParam,
   ContentBlock,
+  ToolResultBlockParam,
 } from "../../types/anthropic.types";
+import {
+  toCanonicalMessage,
+  toCanonicalTool,
+  toCanonicalToolChoice,
+  toMessageParam,
+  toToolResultBlock,
+  toToolUseBlock,
+  toAnthropicTool,
+  toAnthropicToolChoice,
+} from "./anthropic.messages";
 import {
   createStreamDecoder,
   createStreamEncoder,
 } from "./anthropic.stream";
-
-type ImageMediaType = "image/jpeg" | "image/png" | "image/gif" | "image/webp";
 
 export const anthropicAdapter: ProviderAdapter<MessageCreateParams, Message> = {
   toCanonicalRequest,
@@ -46,10 +53,9 @@ export const anthropicAdapter: ProviderAdapter<MessageCreateParams, Message> = {
 export function toCanonicalRequest(
   request: MessageCreateParams,
 ): CanonicalRequest {
-  const messages: CanonicalMessage[] = request.messages.map((m) => ({
-    role: m.role as CanonicalMessage["role"],
-    content: extractContent(m.content),
-  }));
+  const messages: CanonicalMessage[] = request.messages.flatMap((m) =>
+    toCanonicalMessage(m),
+  );
 
   // Add system as first message if present
   if (request.system) {
@@ -75,6 +81,10 @@ export function toCanonicalRequest(
     // Canonical treats absent and stream:false identically — only an
     // explicit true turns streaming on.
     ...(request.stream === true && { stream: true }),
+    ...(request.tools && { tools: request.tools.map(toCanonicalTool) }),
+    ...(request.tool_choice && {
+      toolChoice: toCanonicalToolChoice(request.tool_choice),
+    }),
     ...(request.system && {
       systemPrompt:
         typeof request.system === "string"
@@ -100,49 +110,29 @@ export function toCanonicalRequest(
   return result;
 }
 
-function extractContent(
-  content: MessageParam["content"],
-): string | CanonicalContentPart[] {
-  if (typeof content === "string") {
-    return content;
-  }
-
-  return content.map((block): CanonicalContentPart => {
-    if (block.type === "text") {
-      return { type: "text", text: block.text };
-    }
-    if (block.type === "image" && "source" in block) {
-      const source = block.source as {
-        type: string;
-        media_type?: string;
-        data?: string;
-      };
-      if (source.type === "base64" && source.data) {
-        return {
-          type: "image",
-          image: {
-            data: source.data,
-            mimeType: (source.media_type ||
-              "image/png") as CanonicalImage["mimeType"],
-          },
-        };
-      }
-    }
-    return { type: "text", text: "" };
-  });
-}
-
 // ============ REQUEST: Canonical → Anthropic ============
 
 export function fromCanonicalRequest(
   request: CanonicalRequest,
 ): MessageCreateParams {
-  const messages: MessageParam[] = request.messages
-    .filter((m) => m.role !== "system")
-    .map((m) => ({
-      role: m.role === "assistant" ? "assistant" : "user",
-      content: convertToAnthropicContent(m.content),
-    }));
+  const nonSystem = request.messages.filter((m) => m.role !== "system");
+  const messages: MessageCreateParams["messages"] = [];
+  for (let i = 0; i < nonSystem.length; i++) {
+    const m = nonSystem[i];
+    if (m.role === "tool") {
+      // Merge the run of consecutive tool messages into ONE user
+      // message of tool_result blocks (spec §3.4).
+      const results: ToolResultBlockParam[] = [];
+      while (i < nonSystem.length && nonSystem[i].role === "tool") {
+        results.push(toToolResultBlock(nonSystem[i]));
+        i++;
+      }
+      i--;
+      messages.push({ role: "user", content: results });
+      continue;
+    }
+    messages.push(toMessageParam(m));
+  }
 
   const systemPrompt =
     request.systemPrompt ||
@@ -162,6 +152,10 @@ export function fromCanonicalRequest(
     ...(request.config?.stopSequences && {
       stop_sequences: request.config.stopSequences,
     }),
+    ...(request.tools && { tools: request.tools.map(toAnthropicTool) }),
+    ...(request.toolChoice && {
+      tool_choice: toAnthropicToolChoice(request.toolChoice),
+    }),
   };
 
   if (request.stream !== undefined) {
@@ -169,57 +163,6 @@ export function fromCanonicalRequest(
   }
 
   return result;
-}
-
-type AnthropicContentBlock =
-  | { type: "text"; text: string }
-  | {
-      type: "image";
-      source: { type: "base64"; media_type: ImageMediaType; data: string };
-    };
-
-function convertToAnthropicContent(
-  content: string | CanonicalContentPart[],
-): string | AnthropicContentBlock[] {
-  if (typeof content === "string") {
-    return content;
-  }
-
-  const blocks: AnthropicContentBlock[] = content.map((part) => {
-    if (part.type === "text") {
-      return { type: "text", text: part.text || "" };
-    }
-    if (part.type === "image" && part.image) {
-      return {
-        type: "image",
-        source: {
-          type: "base64" as const,
-          media_type: validateMediaType(part.image.mimeType),
-          data: part.image.data,
-        },
-      };
-    }
-    return { type: "text", text: "" };
-  });
-
-  // If only one text block, return as string
-  if (blocks.length === 1 && blocks[0].type === "text") {
-    return blocks[0].text;
-  }
-
-  return blocks;
-}
-
-function validateMediaType(type: string): ImageMediaType {
-  const validTypes: ImageMediaType[] = [
-    "image/jpeg",
-    "image/png",
-    "image/gif",
-    "image/webp",
-  ];
-  return validTypes.includes(type as ImageMediaType)
-    ? (type as ImageMediaType)
-    : "image/png";
 }
 
 // ============ RESPONSE: Anthropic → Canonical ============
@@ -236,12 +179,29 @@ export function toCanonicalResponse(
     .map((block) => block.text)
     .join("");
 
+  const toolCalls = response.content
+    .filter(
+      (block): block is ContentBlock & { type: "tool_use" } =>
+        block.type === "tool_use",
+    )
+    .map(
+      (block): CanonicalToolCall => ({
+        id: block.id,
+        type: "function",
+        function: {
+          name: block.name,
+          arguments: JSON.stringify(block.input ?? {}),
+        },
+      }),
+    );
+
   return {
     id: response.id || `anthropic-${randomUUID()}`,
     model,
     message: {
       role: "assistant",
       content: textContent,
+      ...(toolCalls.length > 0 && { toolCalls }),
     },
     finishReason: mapFinishReason(response.stop_reason),
     usage: {
@@ -270,16 +230,31 @@ export function mapFinishReason(
 // ============ RESPONSE: Canonical → Anthropic ============
 
 export function fromCanonicalResponse(response: CanonicalResponse): Message {
-  const content =
+  const text =
     typeof response.message.content === "string"
       ? response.message.content
       : "";
+
+  // Text comes before tool_use blocks (spec §3.4).
+  const content: Array<
+    | { type: "text"; text: string }
+    | { type: "tool_use"; id: string; name: string; input: unknown }
+  > = [];
+  if (text) {
+    content.push({ type: "text", text });
+  }
+  for (const tc of response.message.toolCalls ?? []) {
+    content.push(toToolUseBlock(tc));
+  }
+  if (content.length === 0) {
+    content.push({ type: "text", text: "" });
+  }
 
   return {
     id: response.id || `msg_${randomUUID()}`,
     type: "message",
     role: "assistant",
-    content: [{ type: "text", text: content }],
+    content: content as Message["content"],
     model: response.model,
     stop_reason: mapToAnthropicStopReason(response.finishReason),
     stop_sequence: null,
@@ -390,4 +365,5 @@ export function fromCanonicalError(err: CanonicalError): unknown {
   };
 }
 
-// Streaming lives in ./anthropic.stream — re-exported on the adapter above.
+// Message/tool conversion lives in ./anthropic.messages; streaming in
+// ./anthropic.stream — re-exported on the adapter above.

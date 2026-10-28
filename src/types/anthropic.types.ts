@@ -17,6 +17,7 @@ export type MessageDeltaEvent = Anthropic.MessageDeltaEvent;
 
 // Content blocks
 export type ContentBlock = Anthropic.ContentBlock;
+export type ContentBlockParam = Anthropic.ContentBlockParam;
 export type TextBlock = Anthropic.TextBlock;
 export type ToolUseBlock = Anthropic.ToolUseBlock;
 
@@ -29,6 +30,7 @@ export type ToolResultBlockParam = Anthropic.ToolResultBlockParam;
 
 // Tools
 export type Tool = Anthropic.Tool;
+export type ToolUnion = Anthropic.ToolUnion;
 export type ToolChoice = Anthropic.ToolChoice;
 
 // Usage

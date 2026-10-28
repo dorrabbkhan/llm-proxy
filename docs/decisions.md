@@ -1060,3 +1060,30 @@ Spec §3.4 (Anthropic messages). Non-streaming `tools` / `tool_choice` /
     order`, `gemini non-function tool entry → 400 naming the tool
     type`, `gemini ANY with several allowedFunctionNames → 400` (the
     last covers already-implemented behaviour).
+
+## Conductor: act as the babelgate-conductor GitHub App (owner request, 2026-10-28)
+
+- **What:** the conductor and every Devin session act on GitHub as the GitHub App
+  `babelgate-conductor[bot]` (app 5508146, installed on this repository only), not as the
+  owner. `scripts/conductor/app-token.sh` mints 1-hour installation tokens from a private key
+  kept outside the repo (`~/.config/babelgate-conductor/`); `scripts/conductor/bin/gh` and
+  `bin/git-credential-babelgate` fetch a fresh token per call; `app-env.sh` (sourced by
+  `devin.sh`, `status-comment.sh`, `as-app.sh`, `start.sh`) sets them up and authors commits as
+  the bot. The owner's own shell is unaffected. Same setup as NeoPhylo's conductor, with a
+  separate app so a session in one repository holds no key for the other.
+- **Permissions:** Contents, Pull requests, Issues read/write; Actions, Checks, Commit
+  statuses, Metadata read. No Administration, Workflows, Secrets or Environments. **Actions is
+  read-only** because `live.yml` runs with provider API keys and a dispatch executes the
+  dispatched branch's code; CI reruns and dispatches are therefore the owner's, and suspected
+  flakes are rerun locally (CLAUDE.md "GitHub identity").
+- **Why:** under the owner's account the owner could not approve agent PRs (GitHub forbids
+  self-approval), received no notifications for escalations, and `/inbox` could not tell owner
+  commands from agent comments by author.
+- **Owner-only settings** (`docs/conductor/rulesets/apply.sh`, run by the owner): `main` keeps
+  its required `check` and `CLAAssistant` checks and gains one Code Owner approval not by the
+  last pusher; `v*` tags only by the owner.
+- **`.github/CODEOWNERS`:** new, `* @dorrabbkhan`, so every PR needs the owner.
+- **`/inbox`:** a command counts only from `dorrabbkhan` with association OWNER; comments by
+  the bot are never commands. `status-comment.sh` edits only the bot's own sticky comment.
+- **CLA:** the CLA workflow's allowlist (`dorrabbkhan,*[bot]`) already exempts the app; its
+  commits are the owner's agents acting on the owner's behalf.

@@ -198,6 +198,7 @@ export function fromCanonicalRequest(
     if (c.topK !== undefined) options.top_k = c.topK;
     if (c.stopSequences) options.stop = c.stopSequences;
     if (c.seed !== undefined) options.seed = c.seed;
+    if (c.contextWindow !== undefined) options.num_ctx = c.contextWindow;
 
     if (Object.keys(options).length > 0) {
       result.options = options;

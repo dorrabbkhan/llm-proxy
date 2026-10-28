@@ -1087,3 +1087,45 @@ Spec §3.4 (Anthropic messages). Non-streaming `tools` / `tool_choice` /
   the bot are never commands. `status-comment.sh` edits only the bot's own sticky comment.
 - **CLA:** the CLA workflow's allowlist (`dorrabbkhan,*[bot]`) already exempts the app; its
   commits are the owner's agents acting on the owner's behalf.
+
+## v1.1 Task 11: Claude Code essentials
+
+- **`token-estimate.ts` lives in `src/utils/`, not `src/services/`** (Files-block
+  deviation): the Anthropic stream encoder needs `estimateInputTokens` for
+  `message_start.usage.input_tokens`, and adapter files may only import
+  `src/types/`, `src/utils/` and own-provider helpers. A `src/services/` home
+  would be unimportable there; services may import utils, so
+  `src/utils/token-estimate.ts` (+ `src/utils/token-estimate.test.ts`) serves
+  both `count_tokens` (proxy.service) and the encoder.
+- **The `message_start` estimate is derived inside the encoder** as
+  `estimateInputTokens(toCanonicalRequest(ctx.sourceRequest))` — the same body
+  the service decoded, re-run through the pure converter. Passing a precomputed
+  number would need a new field on `StreamEncoderContext`, which the task notes
+  reserve as an owner-level interface change; `sourceRequest` is the existing
+  context field that already carries the client's request (the same channel
+  `openai.stream.ts` uses for `stream_options`). `canonical.types.ts` is
+  unchanged and `message_delta` still carries the real upstream counts.
+- **Files outside the Files block:** `src/transformers/adapters/anthropic.messages.ts`
+  (block-level drop/ValidationError logic — the message-decode layer the
+  adapter delegates to) and `src/transformers/adapters/anthropic.stream.ts`
+  (the `message_start` estimate and the thinking-delta drop logs). Both are
+  own-provider helper files under the same import rules as `anthropic.adapter.ts`.
+- **`src/routes/proxy.ts` was listed as "modify" but needed no change:**
+  `result.headers` was already applied before both the JSON and stream paths,
+  so the `x-babelgate-token-estimate` header flows through unchanged.
+- **`estimateInputTokens` counts system text once.** Every adapter keeps the
+  system text in both `systemPrompt` and a `system`-role message; a literal
+  "system prompt + all message text" formula double-counts it (live check: a
+  26-char request estimated 11 tokens instead of 7). When `systemPrompt` is
+  set, `system`-role messages are skipped; when it is absent their text counts
+  as message text.
+- **`count_tokens` route ordering:** the route precedes the `/v1/messages`
+  chat route in `PROVIDER_ROUTES.anthropic` — routes match by `startsWith` in
+  order, and the two share the prefix.
+- **Ambiguities resolved:** an invalid `MODEL_MAP` entry is an empty pattern,
+  an empty model or no `=` (per trimmed entry; `MODEL_MAP` unset/blank → no
+  rules); glob `*` matches an empty run but the literals around it stay
+  (`x-*-z` does not match `x-z`); `TARGET_CONTEXT_WINDOW` must be a positive
+  integer (`ConfigurationError` otherwise); forwarding and completion log
+  lines carry both `model` (mapped, upstream-bound) and `requestedModel`
+  (client's name) per §3.5 "logs show both".

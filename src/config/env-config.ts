@@ -1,5 +1,7 @@
 import dotenv from "dotenv";
 import type { Provider } from "../transformers";
+import { parseModelMap, type ModelMapRule } from "../utils/model-map";
+import { ConfigurationError } from "../utils/errors";
 
 dotenv.config();
 
@@ -17,6 +19,10 @@ export interface Config {
   upstreamStreamIdleMs: number;
   /** Client-facing auth key — unset means auth disabled */
   proxyApiKey?: string;
+  /** Ordered glob=model rules applied to the canonical model (§3.5) */
+  modelMap: ModelMapRule[];
+  /** Minimum context window the target should allocate (Ollama num_ctx) */
+  targetContextWindow?: number;
 }
 
 function isValidProvider(value: string): value is Provider {
@@ -92,7 +98,21 @@ export function loadConfig(): Config {
       ? parseInt(process.env.UPSTREAM_STREAM_IDLE_MS, 10)
       : 300_000,
     proxyApiKey: process.env.PROXY_API_KEY || undefined,
+    modelMap: parseModelMap(process.env.MODEL_MAP),
+    targetContextWindow: parseTargetContextWindow(),
   };
+}
+
+function parseTargetContextWindow(): number | undefined {
+  const raw = process.env.TARGET_CONTEXT_WINDOW;
+  if (raw === undefined || raw === "") return undefined;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new ConfigurationError(
+      "TARGET_CONTEXT_WINDOW must be a positive integer",
+    );
+  }
+  return value;
 }
 
 /**

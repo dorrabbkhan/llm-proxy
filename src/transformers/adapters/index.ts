@@ -13,7 +13,7 @@ export const adapters: Record<Provider, ProviderAdapter<unknown, unknown>> = {
   anthropic: anthropicAdapter as ProviderAdapter<unknown, unknown>,
 };
 
-export type RouteKind = "chat" | "models";
+export type RouteKind = "chat" | "models" | "count_tokens";
 
 export interface ProviderRoute {
   /** Which canonical flow this route takes */
@@ -120,6 +120,14 @@ export const PROVIDER_ROUTES: Record<Provider, ProviderRoute[]> = {
     },
   ],
   anthropic: [
+    {
+      // Answered locally (spec §3.5) — must precede the /v1/messages
+      // chat route: it shares that prefix and routes match in order.
+      kind: "count_tokens",
+      method: "POST",
+      pathPrefix: "/v1/messages/count_tokens",
+      requestPath: () => "/v1/messages",
+    },
     {
       kind: "chat",
       method: "POST",

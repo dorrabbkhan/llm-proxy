@@ -14,6 +14,7 @@ import {
   kindFromStatus,
   makeCanonicalError,
 } from "../../utils/canonical-error";
+import { logger } from "../../utils/logger";
 import type {
   MessageCreateParams,
   Message,
@@ -50,28 +51,59 @@ export const anthropicAdapter: ProviderAdapter<MessageCreateParams, Message> = {
 
 // ============ REQUEST: Anthropic → Canonical ============
 
+/**
+ * Claude Code fields with no canonical equivalent are dropped safely
+ * (spec §3.5) — a debug line names the dropped thing, never its content.
+ */
+function logDropped(request: MessageCreateParams): void {
+  if (request.thinking !== undefined) {
+    logger.debug('Dropping request field "thinking" (no canonical equivalent)');
+  }
+  if (request.metadata !== undefined) {
+    logger.debug('Dropping request field "metadata" (no canonical equivalent)');
+  }
+  if (hasCacheControl(request)) {
+    logger.debug('Dropping "cache_control" fields (no canonical equivalent)');
+  }
+}
+
+/** cache_control may sit on any block, tool or system part (§3.5). */
+function hasCacheControl(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(hasCacheControl);
+  if (value !== null && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    if ("cache_control" in obj) return true;
+    return Object.values(obj).some(hasCacheControl);
+  }
+  return false;
+}
+
 export function toCanonicalRequest(
   request: MessageCreateParams,
 ): CanonicalRequest {
+  logDropped(request);
+
   const messages: CanonicalMessage[] = request.messages.flatMap((m) =>
     toCanonicalMessage(m),
   );
 
-  // Add system as first message if present
-  if (request.system) {
-    const systemContent =
-      typeof request.system === "string"
-        ? request.system
-        : request.system
-            .filter(
-              (b): b is { type: "text"; text: string } => b.type === "text",
-            )
-            .map((b) => b.text)
-            .join("\n");
+  // §3.5: a system array's text blocks join with a blank line.
+  const systemPrompt = !request.system
+    ? undefined
+    : typeof request.system === "string"
+      ? request.system
+      : request.system
+          .filter(
+            (b): b is { type: "text"; text: string } => b.type === "text",
+          )
+          .map((b) => b.text)
+          .join("\n\n");
 
+  // Add system as first message if present
+  if (systemPrompt !== undefined) {
     messages.unshift({
       role: "system",
-      content: systemContent,
+      content: systemPrompt,
     });
   }
 
@@ -85,17 +117,7 @@ export function toCanonicalRequest(
     ...(request.tool_choice && {
       toolChoice: toCanonicalToolChoice(request.tool_choice),
     }),
-    ...(request.system && {
-      systemPrompt:
-        typeof request.system === "string"
-          ? request.system
-          : request.system
-              .filter(
-                (b): b is { type: "text"; text: string } => b.type === "text",
-              )
-              .map((b) => b.text)
-              .join("\n"),
-    }),
+    ...(systemPrompt !== undefined && { systemPrompt }),
     config: {
       maxTokens: request.max_tokens,
       ...(request.temperature !== undefined && {

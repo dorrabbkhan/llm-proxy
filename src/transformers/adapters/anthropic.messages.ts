@@ -72,7 +72,7 @@ export function toCanonicalMessage(m: MessageParam): CanonicalMessage[] {
 
   const msg: CanonicalMessage = {
     role: m.role as CanonicalMessage["role"],
-    content: rest.length > 0 ? extractContent(rest) : "",
+    content: extractContent(rest),
   };
   if (toolUses.length > 0) {
     msg.toolCalls = toolUses.map(toolUseToCanonical);
@@ -157,6 +157,12 @@ export function toCanonicalToolChoice(choice: ToolChoice): CanonicalToolChoice {
   }
 }
 
+/**
+ * §3.5: `thinking`/`redacted_thinking` blocks are dropped safely (debug
+ * log names the type only); any other unrecognised block type is a 400
+ * naming it — Claude Code blocks we can't honour must fail loudly, not
+ * silently turn into empty text.
+ */
 function extractContent(
   content: MessageParam["content"],
 ): string | CanonicalContentPart[] {
@@ -164,9 +170,11 @@ function extractContent(
     return content;
   }
 
-  return content.map((block): CanonicalContentPart => {
+  const parts: CanonicalContentPart[] = [];
+  for (const block of content) {
     if (block.type === "text") {
-      return { type: "text", text: block.text };
+      parts.push({ type: "text", text: block.text });
+      continue;
     }
     if (block.type === "image" && "source" in block) {
       const source = block.source as {
@@ -175,18 +183,32 @@ function extractContent(
         data?: string;
       };
       if (source.type === "base64" && source.data) {
-        return {
+        parts.push({
           type: "image",
           image: {
             data: source.data,
             mimeType: (source.media_type ||
               "image/png") as CanonicalImage["mimeType"],
           },
-        };
+        });
+      } else {
+        // image without a usable base64 source keeps the old placeholder
+        parts.push({ type: "text", text: "" });
       }
+      continue;
     }
-    return { type: "text", text: "" };
-  });
+    if (block.type === "thinking" || block.type === "redacted_thinking") {
+      logger.debug(
+        `Dropping content block "${block.type}" (no canonical equivalent)`,
+      );
+      continue;
+    }
+    throw new ValidationError(
+      `Unsupported content block type "${block.type}"`,
+    );
+  }
+
+  return parts.length > 0 ? parts : "";
 }
 
 // ============ Canonical → Anthropic ============

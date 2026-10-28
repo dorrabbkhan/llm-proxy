@@ -8,6 +8,8 @@ import {
 import { findSourceRoute } from "../transformers/adapters";
 import { postJson, getJson, postStream } from "./http-client";
 import { runStreamPipeline } from "./stream-pipeline";
+import { applyModelMap } from "../utils/model-map";
+import { estimateInputTokens } from "../utils/token-estimate";
 import { toClientError } from "./upstream-errors";
 import {
   canonicalModelListSchema,
@@ -177,8 +179,30 @@ export async function proxyRequest(
       { requestId },
     );
   }
-  const model = modelFromPath ?? parsed.data.model;
+
+  // §3.5: count_tokens is answered locally — a chars/4 estimate with the
+  // estimate header, never an upstream call.
+  if (route.kind === "count_tokens") {
+    logger.info({ requestId, sourceApi }, "count_tokens answered locally");
+    return {
+      body: { input_tokens: estimateInputTokens(parsed.data) },
+      headers: { "x-babelgate-token-estimate": "true" },
+    };
+  }
+
+  // §3.5: MODEL_MAP rewrites the upstream-bound model; replies and
+  // stream encoders keep the name the client asked for.
+  const requestedModel = modelFromPath ?? parsed.data.model;
+  const model = applyModelMap(requestedModel, config.modelMap);
   parsed.data.model = model;
+
+  // §3.5: TARGET_CONTEXT_WINDOW → canonical contextWindow (Ollama num_ctx).
+  if (config.targetContextWindow !== undefined) {
+    parsed.data.config = {
+      ...parsed.data.config,
+      contextWindow: config.targetContextWindow,
+    };
+  }
 
   // Streaming (spec §3.2): a `stream` body flag on the JSON-body sources,
   // the dedicated streaming endpoint on Gemini — which carries no body
@@ -191,6 +215,7 @@ export async function proxyRequest(
       parsed.data,
       body,
       model,
+      requestedModel,
       config,
       sourceApi,
       targetApi,
@@ -207,7 +232,7 @@ export async function proxyRequest(
   const url = `${config.targetBaseUrl}${targetRoute.requestPath(model)}`;
 
   logger.info(
-    { requestId, sourceApi, targetApi, url },
+    { requestId, sourceApi, targetApi, url, model, requestedModel },
     "Forwarding request to upstream",
   );
 
@@ -234,11 +259,13 @@ export async function proxyRequest(
     throw toClientFacing(err, targetApi);
   }
 
-  // Target → Canonical → Source
+  // Target → Canonical → Source. §3.5: replies carry the model name the
+  // client asked for, not the mapped name sent upstream.
   const canonicalResp = adapters[targetApi].toCanonicalResponse(
     upstream.body,
     model,
   );
+  canonicalResp.model = requestedModel;
 
   // Adapter bug detection (non-production only): canonical response
   // should always be schema-valid
@@ -258,6 +285,7 @@ export async function proxyRequest(
       sourceApi,
       targetApi,
       model,
+      requestedModel,
       inputTokens: canonicalResp.usage?.inputTokens,
       outputTokens: canonicalResp.usage?.outputTokens,
       finishReason: canonicalResp.finishReason,
@@ -283,6 +311,7 @@ async function proxyChatStream(
   canonical: CanonicalRequest,
   sourceRequest: unknown,
   model: string,
+  requestedModel: string,
   config: Config,
   sourceApi: Provider,
   targetApi: Provider,
@@ -293,7 +322,7 @@ async function proxyChatStream(
   const encoder = adapters[sourceApi].createStreamEncoder({
     sourceRequest,
     query: opts?.query ?? {},
-    requestedModel: model,
+    requestedModel,
   });
 
   const targetBody = adapters[targetApi].fromCanonicalRequest(canonical);
@@ -306,7 +335,7 @@ async function proxyChatStream(
   }`;
 
   logger.info(
-    { requestId, sourceApi, targetApi, url, stream: true },
+    { requestId, sourceApi, targetApi, url, model, requestedModel, stream: true },
     "Forwarding request to upstream",
   );
 
@@ -372,6 +401,7 @@ async function proxyChatStream(
           sourceApi,
           targetApi,
           model,
+          requestedModel,
           stream: true,
           inputTokens:
             usageEvent?.type === "usage"

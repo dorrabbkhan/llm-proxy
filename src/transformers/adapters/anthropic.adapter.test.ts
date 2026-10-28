@@ -749,6 +749,103 @@ describe('Anthropic Adapter', () => {
     });
   });
 
+  describe('Claude Code handling (spec §3.5)', () => {
+    it('system array joins with blank line', () => {
+      const input: MessageCreateParams = {
+        model: 'claude-3-opus-20240229',
+        messages: [{ role: 'user', content: 'Hello' }],
+        max_tokens: 1024,
+        system: [
+          { type: 'text', text: 'part one' },
+          { type: 'text', text: 'part two' },
+        ],
+      };
+
+      const result = toCanonicalRequest(input);
+
+      expect(result.systemPrompt).toBe('part one\n\npart two');
+      expect(result.messages[0].role).toBe('system');
+      expect(result.messages[0].content).toBe('part one\n\npart two');
+    });
+
+    it('thinking blocks and cache_control are dropped', () => {
+      const input = {
+        model: 'claude-3-opus-20240229',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: 'hi',
+                cache_control: { type: 'ephemeral' },
+              },
+            ],
+          },
+          {
+            role: 'assistant',
+            content: [
+              { type: 'thinking', thinking: 'let me think', signature: 'sig' },
+              { type: 'redacted_thinking', data: 'opaque' },
+              { type: 'text', text: 'answer' },
+            ],
+          },
+        ],
+        max_tokens: 1024,
+        thinking: { type: 'enabled', budget_tokens: 2000 },
+        metadata: { user_id: 'u1' },
+        system: [
+          {
+            type: 'text',
+            text: 'sys',
+            cache_control: { type: 'ephemeral' },
+          },
+        ],
+      } as unknown as MessageCreateParams;
+
+      const result = toCanonicalRequest(input);
+
+      expect(result.messages).toHaveLength(3);
+      // thinking/redacted_thinking blocks dropped; only the text remains
+      const assistant = result.messages[2];
+      expect(assistant.content).toEqual([{ type: 'text', text: 'answer' }]);
+      expect(assistant.toolCalls).toBeUndefined();
+      expect(result.systemPrompt).toBe('sys');
+    });
+
+    it('unknown block type → 400 naming it', () => {
+      const input = {
+        model: 'claude-3-opus-20240229',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'document',
+                source: {
+                  type: 'base64',
+                  media_type: 'application/pdf',
+                  data: 'abc',
+                },
+              },
+            ],
+          },
+        ],
+        max_tokens: 1024,
+      } as unknown as MessageCreateParams;
+
+      let err: unknown;
+      try {
+        toCanonicalRequest(input);
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(ValidationError);
+      expect((err as ValidationError).statusCode).toBe(400);
+      expect((err as ValidationError).message).toContain('"document"');
+    });
+  });
+
   describe('roundtrip', () => {
     it('should preserve data through request roundtrip', () => {
       const original: MessageCreateParams = {

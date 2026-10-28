@@ -17,11 +17,13 @@ import {
   formatSse,
 } from "../../utils/sse";
 import { logger } from "../../utils/logger";
+import { estimateInputTokens } from "../../utils/token-estimate";
 import {
   fromCanonicalError,
   mapFinishReason,
   mapToAnthropicStopReason,
   toCanonicalError,
+  toCanonicalRequest,
 } from "./anthropic.adapter";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -75,6 +77,14 @@ export function createStreamDecoder(
   // wire content-block index → block kind / canonical tool index
   const toolIndexByWire = new Map<number, number>();
   const openCalls: number[] = [];
+  // §3.5: dropped thinking types are named once per stream at debug.
+  const loggedDrops = new Set<string>();
+
+  function logDrop(type: string): void {
+    if (loggedDrops.has(type)) return;
+    loggedDrops.add(type);
+    logger.debug(`Dropping stream block "${type}" (no canonical equivalent)`);
+  }
 
   function closeAll(out: CanonicalStreamEvent[]): void {
     for (const index of openCalls.splice(0)) {
@@ -127,6 +137,9 @@ export function createStreamDecoder(
             name: typeof block.name === "string" ? block.name : "",
           });
         }
+        if (block.type === "thinking" || block.type === "redacted_thinking") {
+          logDrop(block.type);
+        }
         // text, thinking, server_tool_use, … blocks produce nothing
         break;
       }
@@ -135,6 +148,10 @@ export function createStreamDecoder(
         const delta = event.delta ?? {};
         if (delta.type === "text_delta" && typeof delta.text === "string") {
           out.push({ type: "text_delta", text: delta.text });
+        } else if (delta.type === "thinking_delta") {
+          logDrop("thinking_delta");
+        } else if (delta.type === "signature_delta") {
+          logDrop("signature_delta");
         } else if (delta.type === "input_json_delta") {
           const toolIndex = toolIndexByWire.get(index);
           if (
@@ -149,7 +166,7 @@ export function createStreamDecoder(
             });
           }
         }
-        // thinking_delta, signature_delta, citations_delta → nothing
+        // citations_delta and anything else → nothing
         break;
       }
       case "content_block_stop": {
@@ -260,6 +277,15 @@ export function createStreamDecoder(
 export function createStreamEncoder(
   ctx: StreamEncoderContext<MessageCreateParams>,
 ): StreamEncoder {
+  // §3.5 + owner note (task 11): Claude Code reads message_start's usage
+  // for its context display, but the real counts only arrive in the
+  // final message_delta — so message_start carries the local estimate
+  // of the client's request, derived from ctx.sourceRequest (the same
+  // body the service already decoded; adding an estimate field to
+  // StreamEncoderContext would be a canonical interface change).
+  const estimatedInput = estimateInputTokens(
+    toCanonicalRequest(ctx.sourceRequest),
+  );
   let nextBlockIndex = 0;
   let openTextIndex: number | undefined;
   let finished = false;
@@ -295,7 +321,7 @@ export function createStreamEncoder(
               content: [],
               stop_reason: null,
               stop_sequence: null,
-              usage: { input_tokens: 0, output_tokens: 0 },
+              usage: { input_tokens: estimatedInput, output_tokens: 0 },
             },
           });
         case "text_delta": {

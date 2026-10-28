@@ -1566,3 +1566,34 @@ every failure a live-suite defect, not a babelgate defect — fixed as:
   while the stream encoder (`gemini.stream.ts`) sends it; the Gemini
   API documents the field as optional. Aligning the two encoders is a
   follow-up, out of scope for this task.
+
+## v1.1 Task 18: Gemini and Ollama sources live; release 1.1.2
+
+- **Renumbering:** the plan names this release `1.1.1`, but `1.1.1` was
+  already shipped as an out-of-plan hotfix (see "v1.1 hotfix 1.1.1"),
+  so the Task 18 release is `1.1.2` — `package.json`,
+  `package-lock.json` (root entries only) and `CHANGELOG.md`
+  (`## [1.1.2]`, compare link added).
+- **Live suite:** `tests/live/stream.live.test.ts` sources extended to
+  `gemini` and `ollama` for the stream-text and tool-definitions cases,
+  against the same targets (local Ollama always; OpenRouter when
+  `OPENROUTER_API_KEY` is set). Gemini streams SSE
+  (`:streamGenerateContent?alt=sse`); the Ollama source streams NDJSON,
+  so the suite gained an NDJSON parse path (`parseWireEvents` wraps each
+  line as a data-only event; `postRaw` collects the
+  `application/x-ndjson` body, which supertest leaves out of `res.text`).
+- **Ollama forced tool call: not expressible.** Ollama's chat API has
+  no tool-choice field (`docs/api.md`), so the forced-tool-call case is
+  filtered out for the ollama source rather than faked — its tool case
+  only asserts definitions are accepted with a well-formed reply, which
+  is what the plan asks. Gemini's forced case uses
+  `toolConfig.functionCallingConfig.mode: "ANY"` and asserts a
+  `functionCall` part with a `name` and an `args` object.
+- **Assertion shape:** per-source helpers (`tokenBudget`, `askForWeather`)
+  emit each dialect's own field names (`generationConfig.maxOutputTokens`,
+  `options.num_predict`, `contents[].parts`); the openai/anthropic cases
+  keep their existing assertions unchanged.
+- **Files outside the Files block:** `docs/decisions.md` (this entry —
+  the task requires recording the deviation here).
+- **Owner release steps after merge:** tag `v1.1.2`, `npm publish
+  --access public`, verify `npx -y babelgate@1.1.2 --help`.

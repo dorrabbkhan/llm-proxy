@@ -12,16 +12,16 @@ import {
 } from './live.helpers';
 
 /**
- * Live streaming and tools suite (spec §4.6): the launch-pair sources
- * (openai, anthropic) through the always-on local Ollama target and,
- * when OPENROUTER_API_KEY is set, OpenRouter as an OpenAI-shaped target.
- * Shape assertions only — generated text is never compared, and the
- * forced-tool-call case only requires a well-formed call with parseable
- * arguments.
+ * Live streaming and tools suite (spec §4.6): all four sources
+ * (openai, anthropic, gemini, ollama) through the always-on local
+ * Ollama target and, when OPENROUTER_API_KEY is set, OpenRouter as an
+ * OpenAI-shaped target. Shape assertions only — generated text is
+ * never compared, and the forced-tool-call case only requires a
+ * well-formed call with parseable arguments.
  */
 
-type StreamSource = Extract<Provider, 'openai' | 'anthropic'>;
-const SOURCES: StreamSource[] = ['openai', 'anthropic'];
+type StreamSource = Provider;
+const SOURCES: StreamSource[] = ['openai', 'anthropic', 'gemini', 'ollama'];
 const TARGETS: LiveTarget[] = liveTargets().filter(
   (t) => t === 'ollama' || t === 'openrouter',
 );
@@ -58,22 +58,71 @@ const TOOL_EXTRA: Record<StreamSource, Record<string, unknown>> = {
       },
     ],
   },
+  // Gemini tools are `tools: [{functionDeclarations: [...]}]`
+  // (ai.google.dev/api/generate-content).
+  gemini: {
+    tools: [
+      {
+        functionDeclarations: [
+          {
+            name: 'get_weather',
+            description: 'Get the current weather for a city.',
+            parameters: {
+              type: 'object',
+              properties: { city: { type: 'string' } },
+              required: ['city'],
+            },
+          },
+        ],
+      },
+    ],
+  },
+  // Ollama tools are OpenAI-shaped `tools: [{type:"function",...}]`
+  // (github.com/ollama/ollama/blob/main/docs/api.md).
+  ollama: {
+    tools: [
+      {
+        type: 'function',
+        function: {
+          name: 'get_weather',
+          description: 'Get the current weather for a city.',
+          parameters: {
+            type: 'object',
+            properties: { city: { type: 'string' } },
+            required: ['city'],
+          },
+        },
+      },
+    ],
+  },
 };
 
 // OpenAI `tool_choice: "required"` (platform.openai.com/docs/api-reference/chat)
 // ↔ canonical "required" ↔ Anthropic `tool_choice: {"type":"any"}`
-// (docs.claude.com/en/api/messages).
-const FORCED_TOOL_CHOICE: Record<StreamSource, unknown> = {
-  openai: 'required',
-  anthropic: { type: 'any' },
+// (docs.claude.com/en/api/messages) ↔ Gemini
+// `toolConfig: {functionCallingConfig: {mode: "ANY"}}`
+// (ai.google.dev/api/generate-content). Ollama's chat API has no
+// tool-choice field (github.com/ollama/ollama/blob/main/docs/api.md):
+// a "forced" call can't be expressed on that wire format, so the
+// ollama source gets no forced-tool-call case (its tool case only
+// asserts the definitions are accepted with a well-formed reply).
+const FORCED_TOOL_EXTRA: Partial<
+  Record<StreamSource, Record<string, unknown>>
+> = {
+  openai: { tool_choice: 'required' },
+  anthropic: { tool_choice: { type: 'any' } },
+  gemini: { toolConfig: { functionCallingConfig: { mode: 'ANY' } } },
 };
+const FORCED_SOURCES = SOURCES.filter(
+  (s) => FORCED_TOOL_EXTRA[s] !== undefined,
+);
 
 interface SseEvent {
   event?: string;
   data: string;
 }
 
-/** Parse an SSE body into {event, data} records; both sources stream SSE. */
+/** Parse an SSE body into {event, data} records. */
 function parseSse(text: string): SseEvent[] {
   const events: SseEvent[] = [];
   for (const block of text.split(/\r?\n\r?\n/)) {
@@ -88,6 +137,26 @@ function parseSse(text: string): SseEvent[] {
   return events;
 }
 
+/**
+ * Parse the wire stream for a source into data records: openai,
+ * anthropic and gemini stream SSE `data:` frames (Gemini carries no
+ * `event:` field and no `[DONE]` terminator); the ollama source
+ * streams NDJSON — one complete JSON object per line, the last with
+ * `done: true` (github.com/ollama/ollama/blob/main/docs/api.md) —
+ * wrapped here as data-only events so one assertions path covers all
+ * four sources.
+ */
+function parseWireEvents(source: StreamSource, text: string): SseEvent[] {
+  if (source === 'ollama') {
+    return text
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .map((line) => ({ data: line }));
+  }
+  return parseSse(text);
+}
+
 function jsonData(e: SseEvent): Record<string, unknown> | undefined {
   try {
     return JSON.parse(e.data) as Record<string, unknown>;
@@ -96,7 +165,55 @@ function jsonData(e: SseEvent): Record<string, unknown> | undefined {
   }
 }
 
-/** Count of SSE events that carry a non-empty text delta to the client. */
+/**
+ * supertest only fills `res.text` for text/* content types. Ollama
+ * streams `application/x-ndjson`, so its body must be collected as
+ * raw text with a custom parser.
+ */
+function postRaw(path: string, body: unknown): request.Test {
+  return request(app)
+    .post(path)
+    .send(body)
+    .buffer(true)
+    .parse((res, cb) => {
+      let text = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk: string) => (text += chunk));
+      res.on('end', () => cb(null, text));
+    });
+}
+
+/** Output cap in the source's own dialect — each provider names it
+ * differently. */
+function tokenBudget(
+  source: StreamSource,
+  tokens: number,
+): Record<string, unknown> {
+  if (source === 'gemini') {
+    return { generationConfig: { maxOutputTokens: tokens } };
+  }
+  if (source === 'ollama') {
+    return { options: { num_predict: tokens } };
+  }
+  return { max_tokens: tokens };
+}
+
+/** Replace the request's prompt in the source's own dialect. */
+function askForWeather(
+  source: StreamSource,
+  body: Record<string, unknown>,
+): void {
+  const prompt = 'What is the weather in Lisbon?';
+  if (source === 'gemini') {
+    body.contents = [{ role: 'user', parts: [{ text: prompt }] }];
+    return;
+  }
+  (body as { messages: { role: string; content: string }[] }).messages = [
+    { role: 'user', content: prompt },
+  ];
+}
+
+/** Count of stream events that carry a non-empty text delta to the client. */
 function textDeltaCount(source: StreamSource, events: SseEvent[]): number {
   return events.filter((e) => {
     const d = jsonData(e);
@@ -105,12 +222,31 @@ function textDeltaCount(source: StreamSource, events: SseEvent[]): number {
         ?.delta;
       return typeof delta?.content === 'string' && delta.content.length > 0;
     }
-    return (
-      e.event === 'content_block_delta' &&
-      (d?.delta as { type?: string; text?: string } | undefined)?.type ===
-        'text_delta' &&
-      ((d?.delta as { text?: string }).text?.length ?? 0) > 0
-    );
+    if (source === 'anthropic') {
+      return (
+        e.event === 'content_block_delta' &&
+        (d?.delta as { type?: string; text?: string } | undefined)?.type ===
+          'text_delta' &&
+        ((d?.delta as { text?: string }).text?.length ?? 0) > 0
+      );
+    }
+    if (source === 'gemini') {
+      // Each data: frame is a GenerateContentResponse; text arrives in
+      // candidates[0].content.parts[].text
+      // (ai.google.dev/api/generate-content).
+      const parts =
+        (
+          d?.candidates as
+            | { content?: { parts?: { text?: string }[] } }[]
+            | undefined
+        )?.[0]?.content?.parts ?? [];
+      return parts.some(
+        (p) => typeof p.text === 'string' && p.text.length > 0,
+      );
+    }
+    // Ollama NDJSON: done:false lines carry message.content.
+    const message = d?.message as { content?: string } | undefined;
+    return typeof message?.content === 'string' && message.content.length > 0;
   }).length;
 }
 
@@ -128,6 +264,33 @@ function expectUsage(source: StreamSource, events: SseEvent[]): void {
       total_tokens?: number;
     };
     expect(usage.total_tokens).toBeGreaterThan(0);
+    return;
+  }
+  if (source === 'gemini') {
+    // usageMetadata is cumulative on every frame; the last one carries
+    // the totals (ai.google.dev/api/generate-content).
+    const usageFrame = [...events]
+      .map(jsonData)
+      .reverse()
+      .find((d) => d?.usageMetadata !== undefined);
+    expect(usageFrame, 'no usageMetadata frame in stream').toBeDefined();
+    const usage = usageFrame!.usageMetadata as {
+      totalTokenCount?: number;
+    };
+    expect(usage.totalTokenCount).toBeGreaterThan(0);
+    return;
+  }
+  if (source === 'ollama') {
+    // The done:true line carries the counts
+    // (github.com/ollama/ollama/blob/main/docs/api.md).
+    const done = events.map(jsonData).find((d) => d?.done === true);
+    expect(done, 'no done:true line in stream').toBeDefined();
+    const counts = done as {
+      prompt_eval_count?: number;
+      eval_count?: number;
+    };
+    expect(counts.prompt_eval_count).toBeGreaterThan(0);
+    expect(counts.eval_count).toBeGreaterThan(0);
     return;
   }
   // Anthropic: real output tokens arrive in message_delta; input tokens
@@ -152,6 +315,34 @@ function expectWellFormedReply(source: StreamSource, body: unknown): void {
     ).toBe(true);
     return;
   }
+  if (source === 'gemini') {
+    const candidates = (
+      body as { candidates?: { content?: { parts?: Record<string, unknown>[] } }[] }
+    ).candidates;
+    expect(Array.isArray(candidates)).toBe(true);
+    const parts = candidates?.[0]?.content?.parts ?? [];
+    expect(
+      parts.some(
+        (p) =>
+          (typeof p.text === 'string' && p.text.length > 0) ||
+          p.functionCall !== undefined,
+      ),
+    ).toBe(true);
+    return;
+  }
+  if (source === 'ollama') {
+    const message = (
+      body as { message?: { content?: string; tool_calls?: unknown[] } }
+    ).message;
+    expect(message).toBeDefined();
+    expect(
+      (typeof message!.content === 'string' &&
+        message!.content.length > 0) ||
+        (Array.isArray(message!.tool_calls) &&
+          message!.tool_calls.length > 0),
+    ).toBe(true);
+    return;
+  }
   const content = (body as { content?: { type?: string }[] }).content;
   expect(Array.isArray(content)).toBe(true);
   expect(
@@ -169,6 +360,40 @@ function expectForcedToolCall(source: StreamSource, body: unknown): void {
       expect(() => JSON.parse(call.function!.arguments ?? '')).not.toThrow();
     }
     return;
+  }
+  if (source === 'gemini') {
+    // A forced call arrives as a functionCall part with `name` and an
+    // `args` object (ai.google.dev/api/generate-content).
+    const parts =
+      (
+        body as {
+          candidates?: {
+            content?: {
+              parts?: { functionCall?: { name?: string; args?: unknown } }[];
+            };
+          }[];
+        }
+      ).candidates?.[0]?.content?.parts ?? [];
+    const calls = parts
+      .map((p) => p.functionCall)
+      .filter((c) => c !== undefined);
+    expect(calls.length, 'no functionCall part in reply').toBeGreaterThan(
+      0,
+    );
+    for (const call of calls) {
+      expect(typeof call.name === 'string' && call.name.length > 0).toBe(
+        true,
+      );
+      expect(typeof call.args === 'object' && call.args !== null).toBe(
+        true,
+      );
+    }
+    return;
+  }
+  if (source === 'ollama') {
+    // Unreachable: FORCED_SOURCES filters ollama out — its wire format
+    // has no tool-choice field to force a call with.
+    throw new Error(`no forced-tool-call case for source ${source}`);
   }
   const content = (body as { content?: { type?: string; input?: unknown }[] })
     .content;
@@ -189,7 +414,14 @@ describe.each(TARGETS.map((target) => ({ target })))(
       async ({ source, target }) => {
         useTarget(source, target);
 
-        const extra: Record<string, unknown> = { stream: true };
+        // Gemini selects streaming by path suffix
+        // (`:streamGenerateContent`), not a body flag; `alt=sse` picks
+        // the SSE wire form over the streamed JSON array (spec §3.3,
+        // ai.google.dev/api/generate-content). Ollama's own API streams
+        // by default when `stream` is omitted, but babelgate's ollama
+        // source only streams on an explicit `stream: true`.
+        const extra: Record<string, unknown> =
+          source === 'gemini' ? {} : { stream: true };
         if (source === 'openai') {
           // The OpenAI encoder only emits a usage chunk when the client
           // asked for it (stream_options.include_usage).
@@ -198,19 +430,41 @@ describe.each(TARGETS.map((target) => ({ target })))(
         if (target === 'ollama' || target === 'openrouter') {
           // Same budget as chat.live.test.ts — these targets may need
           // room to finish before the token cap.
-          extra.max_tokens = 512;
+          Object.assign(extra, tokenBudget(source, 512));
         }
         const call = chatCall(source, liveModel(target), extra);
-        const res = await request(app).post(call.path).send(call.body);
+        const path =
+          source === 'gemini'
+            ? `/v1beta/models/${liveModel(target)}:streamGenerateContent?alt=sse`
+            : call.path;
 
-        expect(res.status, res.text).toBe(200);
-        const events = parseSse(res.text);
+        const res =
+          source === 'ollama'
+            ? await postRaw(path, call.body)
+            : await request(app).post(path).send(call.body);
+        const wire = source === 'ollama' ? (res.body as string) : res.text;
+
+        expect(res.status, wire).toBe(200);
+        const events = parseWireEvents(source, wire);
         expect(events.length).toBeGreaterThanOrEqual(2);
         expect(textDeltaCount(source, events)).toBeGreaterThanOrEqual(1);
         if (source === 'openai') {
           expect(events[events.length - 1]!.data).toBe('[DONE]');
-        } else {
+        } else if (source === 'anthropic') {
           expect(events[events.length - 1]!.event).toBe('message_stop');
+        } else if (source === 'ollama') {
+          expect(jsonData(events[events.length - 1]!)?.done).toBe(true);
+        } else {
+          // Gemini streams have no terminator; the final data: frame
+          // carries the finishReason (and usageMetadata).
+          const last = jsonData(events[events.length - 1]!);
+          const finishReason = (
+            last?.candidates as { finishReason?: string }[] | undefined
+          )?.[0]?.finishReason;
+          expect(
+            finishReason,
+            'no finishReason on the last SSE frame',
+          ).toBeDefined();
         }
         expectUsage(source, events);
       },
@@ -221,15 +475,14 @@ describe.each(TARGETS.map((target) => ({ target })))(
       async ({ source, target }) => {
         useTarget(source, target);
 
-        const extra: Record<string, unknown> = { ...TOOL_EXTRA[source] };
-        // Room for a full tool-call JSON payload.
-        extra.max_tokens = target === 'ollama' ? 512 : 256;
+        const extra: Record<string, unknown> = {
+          ...TOOL_EXTRA[source],
+          // Room for a full tool-call JSON payload.
+          ...tokenBudget(source, target === 'ollama' ? 512 : 256),
+        };
         const call = chatCall(source, liveModel(target), extra);
         // Ask for the weather so a tool-capable model may call the tool.
-        (call.body as { messages: { role: string; content: string }[] })
-          .messages = [
-          { role: 'user', content: 'What is the weather in Lisbon?' },
-        ];
+        askForWeather(source, call.body as Record<string, unknown>);
 
         const res = await request(app).post(call.path).send(call.body);
 
@@ -239,23 +492,19 @@ describe.each(TARGETS.map((target) => ({ target })))(
     );
 
     if (target === 'openrouter') {
-      it.each(SOURCES.map((source) => ({ source, target })))(
+      it.each(FORCED_SOURCES.map((source) => ({ source, target })))(
         '$source → $target forced tool call',
         async ({ source, target }) => {
           useTarget(source, target);
 
           const extra: Record<string, unknown> = {
             ...TOOL_EXTRA[source],
-            tool_choice: FORCED_TOOL_CHOICE[source],
-            max_tokens: 512,
+            ...FORCED_TOOL_EXTRA[source],
+            ...tokenBudget(source, 512),
           };
           const call = chatCall(source, liveModel(target), extra);
-          const body = call.body as {
-            messages?: { role: string; content: string }[];
-          };
-          body.messages = [
-            { role: 'user', content: 'What is the weather in Lisbon?' },
-          ];
+          const body = call.body as Record<string, unknown>;
+          askForWeather(source, body);
 
           const res = await request(app).post(call.path).send(body);
 

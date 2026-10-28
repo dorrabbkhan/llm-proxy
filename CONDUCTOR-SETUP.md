@@ -26,8 +26,8 @@ you can approve them, and only your comments count as commands.
 4. Check: `scripts/conductor/app-token.sh --permissions` prints exactly the permissions above.
 5. Branch rules (owner): `bash docs/conductor/rulesets/apply.sh` from your own shell — `main` keeps its required
    checks and gains a required Code Owner approval (admins may bypass); `v*` tags can be created only by you.
-Your own shell keeps using `gh` and git as you; only processes started through `scripts/conductor/` act as the
-app. The CLA workflow's allowlist (`*[bot]`) already covers the app.
+Your own shell keeps using `gh` and git as you. Every Claude Code session opened in this repo acts as the app
+(SessionStart hook `scripts/conductor/session-env.sh`), as do processes started through `scripts/conductor/`. The CLA workflow's allowlist (`*[bot]`) already covers the app.
 
 ## 2. Files in the repo
 CLAUDE.md (conductor instructions), AGENTS.md (agent rules), .claude/commands/ and .claude/settings.json,
@@ -38,9 +38,9 @@ CLAUDE.md (conductor instructions), AGENTS.md (agent rules), .claude/commands/ a
 ```bash
 cd ~/llm-proxy
 tmux new -s conductor          # keeps it running if you close the terminal
-scripts/conductor/start.sh     # claude as the app; then type:  /conduct v1.0.1 1
+claude                         # acts as the app (SessionStart hook); then type:  /conduct v1.0.1 1
 ```
-or fully headless for one task: `scripts/conductor/start.sh -p "/conduct v1.0.1 1"`.
+or fully headless for one task: `claude -p "/conduct v1.0.1 1"`.
 For a range: `/run-plan v1.0.1 1 5` (pauses at gates; waits for your merges).
 
 ## 4. Talking to it

@@ -499,9 +499,10 @@ function clientJsonReply(source: Provider, body: any): ClientReply {
       const parts: any[] = body.candidates?.[0]?.content?.parts ?? [];
       return {
         text: parts.map((p) => p.text ?? "").join(""),
-        // functionCall.id is optional on the wire (both encoders
-        // send it); ids are generated for Gemini cells and ignored
-        // here — see "v1.1 follow-ups" in docs/decisions.md.
+        // functionCall.id is optional on the wire (both client-
+        // facing encoders, stream and non-stream, send it); ids are
+        // generated for Gemini cells and ignored here — see
+        // "v1.1 follow-ups" in docs/decisions.md.
         calls: parts
           .filter((p) => p.functionCall)
           .map((p) => ({

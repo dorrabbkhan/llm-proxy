@@ -260,9 +260,11 @@ describe("Proxy integration: Ollama → OpenAI", () => {
   });
 
   it("transforms ollama request and returns ollama response", async () => {
+    // stream:false — Ollama's /api/chat streams NDJSON by default
+    // (api.md); the single-object response is what this test parses.
     const res = await request(app)
       .post("/api/chat")
-      .send(ollamaFixtures.requests.basic)
+      .send({ ...ollamaFixtures.requests.basic, stream: false })
       .expect(200);
 
     // Upstream got OpenAI format

@@ -37,14 +37,20 @@ describe.each(liveTargets().map((target) => ({ target })))(
         // The ≤16 cap exists to keep paid calls cheap; the local Ollama
         // target is free, and a thinking model needs room to finish
         // reasoning before it emits content, so give those sources a
-        // larger budget for this target only.
+        // larger budget for this target only. The ollama source sends
+        // stream:false — Ollama's /api/chat streams NDJSON when `stream`
+        // is omitted (api.md, default true), and this case parses a
+        // single-object reply.
         const call = chatCall(
           source,
           liveModel(target),
-          target === 'ollama' &&
+          {
+            ...(source === 'ollama' ? { stream: false } : {}),
+            ...(target === 'ollama' &&
             (source === 'openai' || source === 'anthropic')
-            ? { max_tokens: 512 }
-            : {},
+              ? { max_tokens: 512 }
+              : {}),
+          },
         );
         const res = await request(app).post(call.path).send(call.body);
 

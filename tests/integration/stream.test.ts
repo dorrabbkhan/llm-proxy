@@ -243,6 +243,50 @@ describe("streaming (spec §3.2)", () => {
     });
   });
 
+  it("ollama → openai with no stream field streams NDJSON", async () => {
+    setPair("ollama", "openai");
+
+    // Ollama's /api/chat streams NDJSON unless the client sends
+    // stream:false (api.md: "stream ... if false the response will be
+    // returned as a single response object"; default true) — an
+    // omitted flag must get the stream.
+    const res = await postStream(
+      "/api/chat",
+      ollamaFixtures.requests.basic as object,
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("application/x-ndjson");
+    const body = res.body as string;
+    const lines = body.split("\n").filter((l) => l !== "");
+    expect(lines.length).toBeGreaterThan(1);
+    for (const line of lines) JSON.parse(line);
+    expect(JSON.parse(lines.at(-1)!)).toMatchObject({ done: true });
+
+    expect(capturedRequests.openai[0]).toMatchObject({
+      stream: true,
+      stream_options: { include_usage: true },
+    });
+  });
+
+  it("ollama → openai stream:false returns a single JSON object", async () => {
+    setPair("ollama", "openai");
+
+    const res = await request(app)
+      .post("/api/chat")
+      .send({
+        ...(ollamaFixtures.requests.basic as Record<string, unknown>),
+        stream: false,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("application/json");
+    expect(res.body.message).toBeDefined();
+    expect(res.body.done).toBe(true);
+
+    expect(capturedRequests.openai).toHaveLength(1);
+  });
+
   it("openai → gemini stream:true streams SSE", async () => {
     setPair("openai", "gemini");
     const upstream = captureUpstreamUrls("gemini");

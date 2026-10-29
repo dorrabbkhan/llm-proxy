@@ -88,7 +88,7 @@ Replies carry the name the client asked for, either way.
   defaults).
 - **Errors** arrive in OpenAI's error shape, so `openai.APIError`
   subclasses raise as usual — including in-stream error events.
-- **Ollama caveat:** a request that omits `stream` gets a single JSON
-  reply (Ollama's own API streams by default; babelgate doesn't mimic
-  that — send `"stream": true` or `"stream": false` explicitly).
+- **Ollama caveat:** for Ollama-format requests (`/api/chat`), an
+  omitted `stream` streams NDJSON, like Ollama's own API — send
+  `"stream": false` for a single JSON reply.
 - See the README's Known limitations for what's intentionally unmapped.

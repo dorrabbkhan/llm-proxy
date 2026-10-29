@@ -1566,3 +1566,103 @@ every failure a live-suite defect, not a babelgate defect — fixed as:
   while the stream encoder (`gemini.stream.ts`) sends it; the Gemini
   API documents the field as optional. Aligning the two encoders is a
   follow-up, out of scope for this task.
+
+## v1.1 Task 18: Gemini and Ollama sources live; release 1.1.2
+
+- **Renumbering:** the plan names this release `1.1.1`, but `1.1.1` was
+  already shipped as an out-of-plan hotfix (see "v1.1 hotfix 1.1.1"),
+  so the Task 18 release is `1.1.2` — `package.json`,
+  `package-lock.json` (root entries only) and `CHANGELOG.md`
+  (`## [1.1.2]`, compare link added).
+- **Live suite:** `tests/live/stream.live.test.ts` sources extended to
+  `gemini` and `ollama` for the stream-text and tool-definitions cases,
+  against the same targets (local Ollama always; OpenRouter when
+  `OPENROUTER_API_KEY` is set). Gemini streams SSE
+  (`:streamGenerateContent?alt=sse`); the Ollama source streams NDJSON,
+  so the suite gained an NDJSON parse path (`parseWireEvents` wraps each
+  line as a data-only event; `postRaw` collects the
+  `application/x-ndjson` body, which supertest leaves out of `res.text`).
+- **Ollama forced tool call: not expressible.** Ollama's chat API has
+  no tool-choice field (`docs/api.md`), so the forced-tool-call case is
+  filtered out for the ollama source rather than faked — its tool case
+  only asserts definitions are accepted with a well-formed reply, which
+  is what the plan asks. Gemini's forced case uses
+  `toolConfig.functionCallingConfig.mode: "ANY"` and asserts a
+  `functionCall` part with a `name` and an `args` object.
+- **Assertion shape:** per-source helpers (`tokenBudget`, `askForWeather`)
+  emit each dialect's own field names (`generationConfig.maxOutputTokens`,
+  `options.num_predict`, `contents[].parts`); the openai/anthropic cases
+  keep their existing assertions unchanged.
+- **Files outside the Files block:** `docs/decisions.md` (this entry —
+  the task requires recording the deviation here).
+- **Owner release steps after merge:** tag `v1.1.2`, `npm publish
+  --access public`, verify `npx -y babelgate@1.1.2 --help`.
+
+### Fix round 1 — Ollama-source `stream` default (owner decision 2026-10-29, ships in 1.1.2)
+
+- **Owner decision:** fix the Ollama-source `stream` default in this
+  PR. Ollama's `POST /api/chat` streams NDJSON when `stream` is omitted
+  (api.md: "stream: if false the response will be returned as a single
+  response object"; default true); babelgate's Ollama source only
+  streamed on an explicit `stream: true`.
+- **Change:** in `toCanonicalRequest`
+  (`src/transformers/adapters/ollama.adapter.ts`),
+  `request.stream !== false` now maps to canonical `stream: true` —
+  omitted or `true` streams, explicit `false` is the only opt-out.
+  Nothing else moved: `proxy.service.ts` already streams on canonical
+  `stream === true`; `fromCanonicalRequest` still sends an explicit
+  `stream` value upstream; no route changes and no provider-pair
+  branch.
+- **New tests:** `ollama.adapter.test.ts` — omitted `stream` →
+  canonical `stream === true`, explicit `stream: false` → no canonical
+  stream (the `stream: true` case was already covered).
+  `tests/integration/stream.test.ts` — `POST /api/chat` with no
+  `stream` field → 200 `application/x-ndjson` ending in `done: true`;
+  with `stream: false` → a single `application/json` object.
+- **Test expectations updated for the new default** — each adds an
+  explicit `stream: false` to keep the single-object path it asserts;
+  no assertion was weakened:
+  - `tests/integration/pairs.test.ts` — the pair matrix sends
+    `{...requests.basic, stream: false}` for the ollama source (was
+    `requests.basic` with no flag → previously a JSON object, now a
+    stream).
+  - `tests/integration/proxy.test.ts` — "Ollama → OpenAI transforms
+    ollama request and returns ollama response" sends
+    `{...requests.basic, stream: false}` (was `requests.basic`).
+  - `tests/integration/stream-pairs.test.ts` — `clientRequest` sends
+    `stream: false` for ollama-source non-streaming cells (was: flag
+    omitted for all non-streaming cells).
+  - `tests/integration/errors.test.ts` — `SOURCE_CALL.ollama` carries
+    `stream: false` (was `requests.basic`), keeping the error matrix
+    on the non-streaming upstream path it asserts.
+  - `tests/live/chat.live.test.ts` — the ollama-source chat round
+    trip sends `stream: false` (was: no flag).
+  - `tests/live/stream.live.test.ts` — "accepts tool definitions"
+    sends `stream: false` for the ollama source (was: no flag);
+    "streams text" now *omits* `stream` for the ollama source so the
+    live run exercises the documented default, and its stale comment
+    was replaced with the api.md cite.
+  - `tests/live/errors.live.test.ts` — deliberately unchanged: the
+    unknown-model case asserts a 404 in the source dialect, which the
+    stream and non-stream paths render identically.
+- **Contract snapshot pending owner action:** the four ollama
+  request-fixture snapshots in
+  `tests/contracts/__snapshots__/fixtures.test.ts.snap` (`basic`,
+  `system`, `params`, `multimodal` → canonical) each gain
+  `"stream": true`. Only the owner may touch fixtures/snapshots or run
+  `vitest -u`; reported via the fix-round STOP for the owner to
+  regenerate.
+- **Files outside the Files block (fix round):**
+  `src/transformers/adapters/ollama.adapter.ts`,
+  `src/transformers/adapters/ollama.adapter.test.ts`,
+  `tests/integration/stream.test.ts`,
+  `tests/integration/pairs.test.ts`,
+  `tests/integration/proxy.test.ts`,
+  `tests/integration/stream-pairs.test.ts`,
+  `tests/integration/errors.test.ts`,
+  `tests/live/chat.live.test.ts`,
+  `README.md` and `docs/recipes/openai-sdk.md` (stale description of
+  the old Ollama-source default),
+  `docs/decisions.md` (this entry).
+  (`tests/live/stream.live.test.ts` and `CHANGELOG.md` are inside the
+  task's Files block.)

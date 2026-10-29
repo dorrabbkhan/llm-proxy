@@ -104,6 +104,29 @@ describe("Ollama Adapter", () => {
 
       expect(result.stream).toBe(true);
     });
+
+    it("streams when stream is omitted (Ollama API default)", () => {
+      const input: OllamaChatRequest = {
+        model: "llama2",
+        messages: [{ role: "user", content: "Hello" }],
+      };
+
+      const result = toCanonicalRequest(input);
+
+      expect(result.stream).toBe(true);
+    });
+
+    it("does not stream on explicit stream:false", () => {
+      const input: OllamaChatRequest = {
+        model: "llama2",
+        messages: [{ role: "user", content: "Hello" }],
+        stream: false,
+      };
+
+      const result = toCanonicalRequest(input);
+
+      expect(result.stream).toBeUndefined();
+    });
   });
 
   describe("fromCanonicalRequest", () => {

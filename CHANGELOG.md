@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-10-29
+
+Milestone 2: the full streaming × tools matrix and live coverage for the
+remaining source dialects.
+
+### Added
+
+- **All 16 source × target pairs pass the streaming × tools matrix** —
+  text, tool call, parallel calls and tool-result round trip, streamed
+  and non-streamed.
+- **Gemini and Ollama sources covered by the live suite.**
+  `npm run test:live` now streams text and sends tool definitions
+  through `POST /v1beta/models/<model>:streamGenerateContent?alt=sse`
+  (SSE `GenerateContentResponse` frames) and `POST /api/chat` (NDJSON,
+  token counts on the `done: true` line) against local Ollama, and adds
+  a Gemini forced tool call (`functionCallingConfig.mode: "ANY"`)
+  against OpenRouter. Ollama has no tool-choice wire field, so no
+  forced-tool-call case exists for that source.
+
+### Fixed
+
+- **Ollama-format clients that omit `stream` now get an NDJSON stream**,
+  matching the Ollama API: `POST /api/chat` streams unless `stream:
+  false` is sent (api.md, default true). Previously the proxy answered
+  a single JSON object, so Ollama clients that rely on the documented
+  default never saw streaming. Send `stream: false` for the old
+  single-object behaviour.
+
 ## [1.1.1] - 2026-10-28
 
 ### Fixed
@@ -178,7 +206,8 @@ gets the repository ready for outside contributors.
 - **Ollama `thinking` output is dropped** by the proxy (the canonical
   format has no field for it); planned for v1.1.
 
-[Unreleased]: https://github.com/dorrabbkhan/babelgate/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/dorrabbkhan/babelgate/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/dorrabbkhan/babelgate/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/dorrabbkhan/babelgate/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/dorrabbkhan/babelgate/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/dorrabbkhan/babelgate/releases/tag/v1.0.1

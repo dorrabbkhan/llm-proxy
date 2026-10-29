@@ -10,7 +10,24 @@ permissions:
   packages: write
 
 jobs:
+  # Packed-install smoke test (1.1.1 hotfix): the tagged commit must start
+  # the way `npx babelgate` does — tarball installed with --omit=dev,
+  # NODE_ENV unset. The image is not pushed unless this passes.
+  smoke-pack:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: ./scripts/ci/smoke-pack.sh
+
   docker:
+    needs: smoke-pack
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

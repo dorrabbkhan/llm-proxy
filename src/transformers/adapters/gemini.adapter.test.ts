@@ -293,6 +293,43 @@ describe('Gemini Adapter', () => {
       expect(fromCanonicalResponse(makeCanonical('length')).candidates![0].finishReason).toBe(FinishReason.MAX_TOKENS);
       expect(fromCanonicalResponse(makeCanonical('content_filter')).candidates![0].finishReason).toBe(FinishReason.SAFETY);
     });
+
+    it('should carry the canonical call id as functionCall.id', () => {
+      // FunctionCall.id is a documented optional field; the stream
+      // encoder already sends it and a client echoes it back as
+      // functionResponse.id.
+      const input: CanonicalResponse = {
+        id: 'test',
+        model: 'gemini-pro',
+        message: {
+          role: 'assistant',
+          content: '',
+          toolCalls: [
+            {
+              id: 'call_42',
+              type: 'function',
+              function: {
+                name: 'get_weather',
+                arguments: '{"city":"Paris"}',
+              },
+            },
+          ],
+        },
+        finishReason: 'tool_call',
+      };
+
+      const result = fromCanonicalResponse(input);
+
+      expect(result.candidates![0].content.parts).toEqual([
+        {
+          functionCall: {
+            id: 'call_42',
+            name: 'get_weather',
+            args: { city: 'Paris' },
+          },
+        },
+      ]);
+    });
   });
 
   describe('tools', () => {
@@ -396,6 +433,31 @@ describe('Gemini Adapter', () => {
       });
       expect(result.contents[1].parts[0]).toEqual({
         functionCall: { name: 'get_weather', args: { city: 'Paris' } },
+      });
+    });
+
+    it('gemini request encoder still omits functionCall.id', () => {
+      const request: CanonicalRequest = {
+        model: 'gemini-pro',
+        messages: [
+          {
+            role: 'assistant',
+            content: '',
+            toolCalls: [
+              {
+                id: 'call_42',
+                type: 'function',
+                function: { name: 'f', arguments: '{"x":1}' },
+              },
+            ],
+          },
+        ],
+      };
+
+      const result = fromCanonicalRequest(request);
+
+      expect(result.contents[0].parts[0]).toEqual({
+        functionCall: { name: 'f', args: { x: 1 } },
       });
     });
 

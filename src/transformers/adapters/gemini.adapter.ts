@@ -4,6 +4,7 @@ import type {
   CanonicalResponse,
   CanonicalMessage,
   CanonicalContentPart,
+  CanonicalToolCall,
   CanonicalError,
   CanonicalErrorKind,
   CanonicalFinishReason,
@@ -248,7 +249,7 @@ export function fromCanonicalRequest(
         parts = parts.filter(
           (p) => !("text" in p && p.text === ""),
         );
-        parts.push(...calls.map(functionCallPart));
+        parts.push(...calls.map((call) => functionCallPart(call)));
       }
       contents.push({ role: "model", parts });
     } else if (m.role === "tool") {
@@ -423,10 +424,12 @@ export function fromCanonicalResponse(
       ? response.message.content
       : "";
   const toolCalls = response.message.toolCalls ?? [];
+  const callPart = (call: CanonicalToolCall): Part =>
+    functionCallPart(call, { includeId: true });
   const parts: Part[] =
     toolCalls.length > 0 && content === ""
-      ? toolCalls.map(functionCallPart)
-      : [{ text: content }, ...toolCalls.map(functionCallPart)];
+      ? toolCalls.map(callPart)
+      : [{ text: content }, ...toolCalls.map(callPart)];
 
   return {
     candidates: [

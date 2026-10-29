@@ -46,8 +46,7 @@ import anthropicFixtures from "../fixtures/anthropic.json";
  * compared for cells touching Gemini: the recorded Gemini upstream
  * sends none — ids are generated per spec §3.4 "id used when
  * present, otherwise generated" — and the Gemini client side treats
- * `id` as optional; the stream/non-stream encoder difference is a
- * listed follow-up); and after_tool_result's tool result must reach
+ * `id` as optional); and after_tool_result's tool result must reach
  * the upstream request in the target's dialect.
  */
 const PROVIDERS: Provider[] = ["openai", "gemini", "ollama", "anthropic"];
@@ -500,9 +499,10 @@ function clientJsonReply(source: Provider, body: any): ClientReply {
       const parts: any[] = body.candidates?.[0]?.content?.parts ?? [];
       return {
         text: parts.map((p) => p.text ?? "").join(""),
-        // The non-stream encoder omits functionCall.id (optional in
-        // the API; the stream encoder sends it — see the Task 17
-        // follow-up in docs/decisions.md).
+        // functionCall.id is optional on the wire (both client-
+        // facing encoders, stream and non-stream, send it); ids are
+        // generated for Gemini cells and ignored here — see
+        // "v1.1 follow-ups" in docs/decisions.md.
         calls: parts
           .filter((p) => p.functionCall)
           .map((p) => ({
@@ -833,10 +833,8 @@ describe("16-pair streaming × tools matrix (spec §4.5, §5)", () => {
         // Ids are not compared for cells touching Gemini: the
         // recorded Gemini upstream sends none, so canonical ids are
         // generated and can differ from the oracle's; and the Gemini
-        // client side treats `functionCall.id` as optional (the
-        // stream encoder sends it, the non-stream encoder omits it —
-        // a listed follow-up). Elsewhere the oracle's ids must
-        // survive intact.
+        // client side treats `functionCall.id` as optional. Elsewhere
+        // the oracle's ids must survive intact.
         const idsOnWire = source !== "gemini" && target !== "gemini";
         const stripIds = (calls: ExpectedCall[]) =>
           calls.map(({ id: _id, ...rest }) => rest);

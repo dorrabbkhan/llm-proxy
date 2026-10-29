@@ -1,0 +1,137 @@
+import type { GatewayConfig } from "../config/env-config";
+import {
+  adapters,
+  PROVIDER_ROUTES,
+  type Provider,
+} from "../transformers";
+import type { RoutePlan } from "../routing/plan-route";
+import { authHeaders } from "../routing/registry";
+import type { CanonicalRequest } from "../types/canonical.types";
+import { canonicalResponseSchema } from "../types/canonical.schema";
+import { UpstreamError } from "../utils/errors";
+import { logger } from "../utils/logger";
+import { postJson } from "./http-client";
+import {
+  attemptTargets,
+  canonicalForTarget,
+  toClientFacing,
+} from "./attempt-targets";
+import type {
+  ProxyRequestOptions,
+  ProxyResult,
+} from "./proxy.service";
+
+/** Everything a chat service needs — explicit inputs, no globals. */
+export interface ChatInput {
+  source: Provider;
+  /** The client's original request body (stream encoders need it) */
+  sourceBody: unknown;
+  /** Validated canonical request — never mutated by the services */
+  canonical: CanonicalRequest;
+  /** The model name the client asked for (§3.5 reply model) */
+  requestedModel: string;
+  plan: RoutePlan;
+  config: GatewayConfig;
+  requestId: string;
+  opts?: ProxyRequestOptions;
+}
+
+/**
+ * Non-streaming chat over a RoutePlan: per target — encode with the
+ * registry provider's adapter, postJson with its URL, auth and
+ * timeouts; decode the reply → model := requestedModel → encode in the
+ * client's format (moved from proxy.service, spec §3.1).
+ */
+export async function proxyChat(input: ChatInput): Promise<ProxyResult> {
+  const { source, canonical, requestedModel, plan, config, requestId } =
+    input;
+
+  const result = await attemptTargets(
+    plan,
+    config.registry,
+    async (entry, target) => {
+      const targetBody = adapters[entry.type].fromCanonicalRequest(
+        canonicalForTarget(canonical, entry, target),
+      );
+      const targetRoute = PROVIDER_ROUTES[entry.type].find(
+        (r) => r.kind === "chat",
+      )!;
+      const url = `${entry.baseUrl}${targetRoute.requestPath(target.model)}`;
+
+      logger.info(
+        {
+          requestId,
+          sourceApi: source,
+          targetApi: entry.type,
+          url,
+          model: target.model,
+          requestedModel,
+        },
+        "Forwarding request to upstream",
+      );
+
+      const upstream = await postJson({
+        url,
+        headers: authHeaders(entry),
+        body: targetBody,
+        timeoutMs: entry.timeoutMs ?? config.upstreamTimeoutMs,
+        retries: config.upstreamRetries,
+        requestId,
+      }).catch((err) => {
+        throw err instanceof UpstreamError
+          ? toClientFacing(err, entry.type)
+          : err;
+      });
+
+      if (upstream.status < 200 || upstream.status >= 300) {
+        const err = new UpstreamError(
+          `Upstream ${entry.type} returned ${upstream.status}`,
+          upstream.status,
+          upstream.body,
+        );
+        err.retryAfterSeconds = upstream.retryAfterSeconds;
+        throw toClientFacing(err, entry.type);
+      }
+
+      return upstream;
+    },
+    { requestId, signal: input.opts?.signal },
+  );
+
+  // Target → Canonical → Source. §3.5: replies carry the model name the
+  // client asked for, not the routed name sent upstream.
+  const canonicalResp = adapters[result.entry.type].toCanonicalResponse(
+    result.value.body,
+    result.target.model,
+  );
+  canonicalResp.model = requestedModel;
+
+  // Adapter bug detection (non-production only): canonical response
+  // should always be schema-valid
+  if (process.env.NODE_ENV !== "production") {
+    const respParsed = canonicalResponseSchema.safeParse(canonicalResp);
+    if (!respParsed.success) {
+      logger.error(
+        { requestId, issues: respParsed.error.issues },
+        "Canonical response failed schema validation — adapter bug",
+      );
+    }
+  }
+
+  logger.info(
+    {
+      requestId,
+      sourceApi: source,
+      targetApi: result.entry.type,
+      model: result.target.model,
+      requestedModel,
+      inputTokens: canonicalResp.usage?.inputTokens,
+      outputTokens: canonicalResp.usage?.outputTokens,
+      finishReason: canonicalResp.finishReason,
+      upstreamDurationMs: result.value.durationMs,
+    },
+    "Request completed",
+  );
+
+  return { body: adapters[source].fromCanonicalResponse(canonicalResp) };
+}

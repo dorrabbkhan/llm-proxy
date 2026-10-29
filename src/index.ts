@@ -36,10 +36,8 @@ export function startServer(): Promise<Server> {
       logger.info(
         {
           port,
-          sourceApi: config.sourceApi,
-          targetApi: config.targetApi,
-          targetBaseUrl: config.targetBaseUrl,
-          targetApiKey: config.targetApiKey ? "****" : "Not configured",
+          defaultProvider: config.routing.defaultProvider,
+          providers: config.registry.names(),
         },
         "Server started",
       );

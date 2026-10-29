@@ -5,7 +5,7 @@
       "Edit(docs/conductor/**)",
       "Bash(scripts/conductor/*)",
       "Bash(./scripts/check.sh:*)",
-      "Bash(scripts/llm-proxy-loop.sh:*)",
+      "Bash(scripts/babelgate-loop.sh:*)",
       "Bash(devin:*)",
       "Bash(npm ci)", "Bash(npm test:*)", "Bash(npm run typecheck)", "Bash(npm run build)",
       "Bash(gh pr view:*)", "Bash(gh pr diff:*)", "Bash(gh pr checks:*)", "Bash(gh pr list:*)",

@@ -1,7 +1,7 @@
-# llm-proxy v1.0.1 — Design Spec
+# babelgate v1.0.1 — Design Spec
 
 **Date:** 2026-10-26 · **Status:** approved by owner 2026-10-26 (D1–D5 as recommended) · **Roadmap:** `docs/roadmap.md` (Phase 1) ·
-**Parent spec:** `docs/superpowers/specs/2026-10-26-llm-proxy-roadmap-design.md`
+**Parent spec:** `docs/superpowers/specs/2026-10-26-babelgate-roadmap-design.md`
 
 ## 1. Purpose
 

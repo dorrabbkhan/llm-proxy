@@ -1,6 +1,6 @@
-# AGENTS.md — llm-proxy
+# AGENTS.md — babelgate
 
-llm-proxy is a TypeScript / Express 5 proxy that translates between LLM API formats (OpenAI, Gemini,
+babelgate is a TypeScript / Express 5 proxy that translates between LLM API formats (OpenAI, Gemini,
 Ollama, Anthropic) through a canonical intermediate format: one adapter per provider, never one
 transformer per provider pair.
 
@@ -53,8 +53,8 @@ seems wrong, stop and ask. Do not guess.
 - Iterate with `./scripts/check.sh quick`; run the full `./scripts/check.sh` once before pushing. Do not
   disable, skip or loosen tests to make it pass.
 - Push the task branch and open a PR with `gh pr create`; the PR body is the Final summary.
-- After `gh pr create`, start `scripts/llm-proxy-loop.sh watch` (backgrounds the check watch) and block on
-  `scripts/llm-proxy-loop.sh await` only before the final summary. Don't review your own PR or post reviews
+- After `gh pr create`, start `scripts/babelgate-loop.sh watch` (backgrounds the check watch) and block on
+  `scripts/babelgate-loop.sh await` only before the final summary. Don't review your own PR or post reviews
   or comments on it; the conductor runs the independent review in a fresh session.
 - The PR is done when all GitHub checks are green. Never merge; the human merges.
 - Final summary: the spec sections implemented, the tests added, and anything ambiguous you resolved.

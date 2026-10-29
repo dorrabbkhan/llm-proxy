@@ -2,15 +2,16 @@
 # Agent-loop helper: overlap the independent PR review with CI instead of
 # waiting for green first. Usage after `gh pr create`:
 #
-#   scripts/llm-proxy-loop.sh watch [pr]   start `gh pr checks --watch` in
+#   scripts/babelgate-loop.sh watch [pr]   start `gh pr checks --watch` in
 #                                       the background, then run the
-#                                       /llm-proxy-review pass while CI runs
-#   scripts/llm-proxy-loop.sh await [pr]   block until the watch finishes;
+#                                       /babelgate-review pass while CI runs
+#   scripts/babelgate-loop.sh await [pr]   block until the watch finishes;
 #                                       call only before the final summary
-#   scripts/llm-proxy-loop.sh status [pr]  print check state once
+#   scripts/babelgate-loop.sh status [pr]  print check state once
 #
 # The PR number defaults to the PR for the current branch. State lives in
-# ${XDG_RUNTIME_DIR:-/tmp}/llm-proxy-loop/pr-<n>.{log,rc,pid}.
+# ${XDG_RUNTIME_DIR}/babelgate-loop/pr-<n>.{log,rc,pid}, falling back to
+# ${TMPDIR:-/tmp} when XDG_RUNTIME_DIR is unset or not writable.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
@@ -28,7 +29,11 @@ if [ -z "$pr" ]; then
   exit 1
 fi
 
-state_dir="${XDG_RUNTIME_DIR:-/tmp}/llm-proxy-loop"
+state_base="${XDG_RUNTIME_DIR:-}"
+if [ -z "$state_base" ] || [ ! -w "$state_base" ]; then
+  state_base="${TMPDIR:-/tmp}"
+fi
+state_dir="$state_base/babelgate-loop"
 mkdir -p "$state_dir"
 log="$state_dir/pr-$pr.log"
 rc="$state_dir/pr-$pr.rc"

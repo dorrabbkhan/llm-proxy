@@ -31,12 +31,12 @@ Your own shell keeps using `gh` and git as you. Every Claude Code session opened
 
 ## 2. Files in the repo
 CLAUDE.md (conductor instructions), AGENTS.md (agent rules), .claude/commands/ and .claude/settings.json,
-.devin/skills/, scripts/conductor/, scripts/check.sh, scripts/llm-proxy-loop.sh and docs/conductor/.
+.devin/skills/, scripts/conductor/, scripts/check.sh, scripts/babelgate-loop.sh and docs/conductor/.
 `.claude/settings.local.json`, `.claude/worktrees/` and `.devin/config.local.json` stay untracked.
 
 ## 3. Start it
 ```bash
-cd ~/llm-proxy
+cd ~/babelgate
 tmux new -s conductor          # keeps it running if you close the terminal
 claude                         # acts as the app (SessionStart hook); then type:  /conduct v1.0.1 1
 ```

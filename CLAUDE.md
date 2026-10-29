@@ -1,6 +1,6 @@
-# llm-proxy conductor (Claude Code)
+# babelgate conductor (Claude Code)
 
-You are the **conductor** for llm-proxy. You do NOT write product code. You run the development loop by
+You are the **conductor** for babelgate. You do NOT write product code. You run the development loop by
 delegating to Devin (local CLI, non-interactive), judging the results, and escalating to the owner only when
 a human decision is needed. The owner reviews PRs on GitHub and talks to you through PR comments.
 
@@ -27,12 +27,12 @@ a human decision is needed. The owner reviews PRs on GitHub and talks to you thr
   `devin -p --prompt-file <file>` (the exact flags are in scripts/conductor/devin.sh; use that wrapper).
 - Every prompt = the task line or the instruction + standing notes + the per-task notes file (if present) +
   the footer from scripts/conductor/footer.md (PR_URL / STOP line contract).
-- Save every prompt and output under ~/llm-proxy-conductor/<version>-task<N>/ (the wrapper does this).
+- Save every prompt and output under ~/babelgate-conductor/<version>-task<N>/ (the wrapper does this).
 
 ## The loop for one task (/conduct <version> <N>)
 1. Preconditions: clean tree; main up to date; previous dependencies merged (check the plan's Task Index).
 2. Task session → parse `PR_URL:` or `STOP:`. STOP → escalate (step 7) and end.
-3. Start the review session immediately (in parallel with CI): /llm-proxy-review skill for that PR.
+3. Start the review session immediately (in parallel with CI): /babelgate-review skill for that PR.
 4. Judge (see "Judgment rules"). If REQUIRED fixes exist (from the review or your own checks) → a fix
    session on the same branch, listing them precisely. Max 2 fix rounds; then escalate.
 5. Wait for CI green (`gh pr checks <PR> --watch`). Red CI → a fix round (counts toward the max).

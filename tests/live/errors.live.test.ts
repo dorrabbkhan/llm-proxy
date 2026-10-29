@@ -20,7 +20,7 @@ import {
  */
 
 const SOURCES: Provider[] = ['openai', 'anthropic', 'gemini', 'ollama'];
-const UNKNOWN_MODEL = 'does-not-exist-llm-proxy';
+const UNKNOWN_MODEL = 'does-not-exist-babelgate';
 
 // Shape assertions for a not_found error in each source dialect.
 const NOT_FOUND_CHECKS: Record<Provider, (body: unknown) => void> = {

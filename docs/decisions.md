@@ -1709,3 +1709,16 @@ every failure a live-suite defect, not a babelgate defect — fixed as:
   the header, the Gemini `clientJsonReply` comment and the ids-on-
   wire note described the old one-sided encoder; no assertion
   changed), `docs/decisions.md` (this entry).
+
+### README demo GIF (2026-10-29)
+
+- `docs/assets/demo.gif` (32 s, ~229 KB) is now embedded at the top of
+  README.md. It shows `claude -p` (Claude Code print mode, like the
+  release gate) fixing the gate fixture's failing `sum` test — file
+  edit plus `npm test` — through `npx babelgate --preset claude-code`
+  running on OpenRouter's free `poolside/laguna-s-2.1:free` model.
+- The model's thinking time is cut from the recording (the tape waits
+  off-camera for the answer), which the README caption states.
+- Re-record with `OPENROUTER_API_KEY=... scripts/demo/record-demo.sh`
+  (VHS tape: `scripts/demo/demo.tape`); the script resolves the repo
+  root via `git rev-parse --show-toplevel`, so it works from any clone.

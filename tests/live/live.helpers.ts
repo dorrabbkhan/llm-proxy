@@ -128,12 +128,15 @@ export function liveModel(target: LiveTarget): string {
 
 /**
  * A minimal one-message chat request in the source's wire format.
- * Gemini carries the model in the path. Every dialect caps output at
+ * Gemini carries the model in the path. Dialects cap output at
  * 16 tokens (`max_tokens`, `generationConfig.maxOutputTokens`,
  * `options.num_predict`) so paid calls stay cheap — OpenRouter treats
  * an uncapped request as 65 536 tokens and rejects it on credit.
- * Caller-provided fields in `extra` merge over the defaults, so
- * explicit budgets (e.g. max_tokens 512) still win.
+ * The Anthropic source defaults to 512 instead: claude-haiku can
+ * spend a 16-token budget on reasoning before it emits a text block,
+ * which left the live anthropic → anthropic chat case with empty
+ * text. Caller-provided fields in `extra` merge over the defaults,
+ * so explicit budgets still win.
  */
 export function chatCall(
   source: Provider,
@@ -159,7 +162,7 @@ export function chatCall(
         path: '/v1/messages',
         body: {
           model,
-          max_tokens: 16,
+          max_tokens: 512,
           messages: [{ role: 'user', content: prompt }],
           ...extra,
         },

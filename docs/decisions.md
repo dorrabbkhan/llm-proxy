@@ -1666,3 +1666,19 @@ every failure a live-suite defect, not a babelgate defect — fixed as:
   `docs/decisions.md` (this entry).
   (`tests/live/stream.live.test.ts` and `CHANGELOG.md` are inside the
   task's Files block.)
+
+## v1.1 follow-ups
+
+### Live anthropic-source chat budget 16 → 512 (2026-10-29)
+
+- `chatCall` in `tests/live/live.helpers.ts` now sends
+  `max_tokens: 512` for the `anthropic` source (was 16). The live
+  `anthropic → anthropic` chat case intermittently returned empty
+  text: claude-haiku-5-5 can spend a 16-token budget on reasoning
+  before it emits a text block. This mirrors the existing 512-token
+  carve-out `chat.live.test.ts` already applies when the ollama
+  target runs a thinking model, and `stream.live.test.ts` applies
+  for ollama/openrouter targets.
+- Anthropic source only: openai/gemini/ollama defaults stay at 16,
+  no assertions changed, and caller-provided `extra` still merges
+  over the default. Owner-approved 2026-10-29.

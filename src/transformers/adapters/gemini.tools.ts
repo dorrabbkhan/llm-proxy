@@ -226,8 +226,17 @@ export function functionResponseContent(
 
 // ============ ENCODE: Canonical → Gemini ============
 
-/** Canonical tool call → Gemini functionCall part (id dropped on the wire). */
-export function functionCallPart(call: CanonicalToolCall): Part {
+/**
+ * Canonical tool call → Gemini functionCall part. `functionCall.id`
+ * is a documented optional field: the request encoder drops it
+ * (default — requests stay byte-identical), while the response
+ * encoder passes `includeId` so the client can echo
+ * `functionResponse.id` back, matching the stream encoder's shape.
+ */
+export function functionCallPart(
+  call: CanonicalToolCall,
+  opts: { includeId?: boolean } = {},
+): Part {
   const parsed = parseToolArguments(call.function.arguments);
   if (!parsed.valid) {
     logger.warn(
@@ -235,7 +244,11 @@ export function functionCallPart(call: CanonicalToolCall): Part {
     );
   }
   return {
-    functionCall: { name: call.function.name, args: parsed.args },
+    functionCall: {
+      ...(opts.includeId === true && { id: call.id }),
+      name: call.function.name,
+      args: parsed.args,
+    },
   };
 }
 

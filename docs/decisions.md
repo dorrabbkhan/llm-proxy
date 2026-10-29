@@ -1666,3 +1666,32 @@ every failure a live-suite defect, not a babelgate defect — fixed as:
   `docs/decisions.md` (this entry).
   (`tests/live/stream.live.test.ts` and `CHANGELOG.md` are inside the
   task's Files block.)
+
+## v1.1 follow-ups
+
+### Gemini non-stream response encoder sends `functionCall.id`
+(owner-approved fix for the Task 17 follow-up, 2026-10-29)
+
+- **Resolved:** the Task 17 follow-up above is done. The non-stream
+  response encoder (`fromCanonicalResponse` in
+  `src/transformers/adapters/gemini.adapter.ts`) now emits
+  `functionCall{id, name, args}` — the same shape the stream encoder
+  sends — so a Gemini client that echoes `functionResponse.id` back
+  gets ids from both streaming and non-streaming replies.
+  `FunctionCall.id` is a documented optional field
+  (ai.google.dev/api/generate-content#FunctionCall: "If populated,
+  the client to execute the functionCall and return the response
+  with the matching id").
+- **How:** `functionCallPart` in `gemini.tools.ts` gained an
+  `{ includeId }` option (default off). `fromCanonicalResponse`
+  passes `includeId: true`; `fromCanonicalRequest` keeps the
+  default, so the canonical → Gemini *request* wire shape is
+  byte-identical — request snapshots unchanged.
+- **New tests:** `gemini.adapter.test.ts` — the non-stream response
+  encoder carries `functionCall.id`, and the request encoder still
+  omits it.
+- **Files outside the Files block:**
+  `tests/integration/stream-pairs.test.ts` (comment updates only —
+  the header, the Gemini `clientJsonReply` comment and the ids-on-
+  wire note described the old one-sided encoder; no assertion
+  changed), `docs/decisions.md` (this entry).

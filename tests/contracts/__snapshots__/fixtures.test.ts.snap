@@ -342,6 +342,7 @@ exports[`Adapter golden fixtures > ollama > request fixtures > basic → canonic
     },
   ],
   "model": "llama3",
+  "stream": true,
 }
 `;
 
@@ -366,6 +367,7 @@ exports[`Adapter golden fixtures > ollama > request fixtures > multimodal → ca
     },
   ],
   "model": "llava",
+  "stream": true,
 }
 `;
 
@@ -388,6 +390,7 @@ exports[`Adapter golden fixtures > ollama > request fixtures > params → canoni
     },
   ],
   "model": "llama3",
+  "stream": true,
 }
 `;
 
@@ -417,6 +420,7 @@ exports[`Adapter golden fixtures > ollama > request fixtures > system → canoni
     },
   ],
   "model": "llama3",
+  "stream": true,
   "systemPrompt": "You are a helpful assistant",
 }
 `;

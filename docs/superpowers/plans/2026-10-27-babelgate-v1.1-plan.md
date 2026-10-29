@@ -1,6 +1,6 @@
 # babelgate v1.1 ("Claude Code on anything") Implementation Plan
 
-> **For agentic workers (Devin):** Run each task in its own session with `/babelgate-task v1.1 <N>`. One task → one branch (`v1.1/task-<N>-<short-name>`) → one PR. Steps use checkbox (`- [ ]`) syntax. Read `AGENTS.md`, this plan's Global Constraints and Review Focus, and the spec sections each task names. Use `./scripts/check.sh quick` while iterating and `./scripts/check.sh` before pushing. Verify every write with `git diff`. (The file name keeps `llm-proxy` so the agent skills find it; the product is renamed in Task 1.)
+> **For agentic workers (Devin):** Run each task in its own session with `/babelgate-task v1.1 <N>`. One task → one branch (`v1.1/task-<N>-<short-name>`) → one PR. Steps use checkbox (`- [ ]`) syntax. Read `AGENTS.md`, this plan's Global Constraints and Review Focus, and the spec sections each task names. Use `./scripts/check.sh quick` while iterating and `./scripts/check.sh` before pushing. Verify every write with `git diff`. (The product is renamed in Task 1.)
 
 **Goal:** Launch: Claude Code (Anthropic format) and OpenAI-SDK apps work against Ollama and OpenAI-compatible backends with streaming and tools, from one `npx babelgate` command.
 

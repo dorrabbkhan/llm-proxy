@@ -1,4 +1,9 @@
 import { ConfigurationError } from "./errors";
+import { globMatch } from "../routing/rules";
+
+// The glob matcher moved to routing/rules.ts with the routing layer;
+// re-exported so existing model-map imports keep working.
+export { globMatch } from "../routing/rules";
 
 /**
  * MODEL_MAP rules (spec §3.5): ordered `glob=model` entries separated by
@@ -8,14 +13,6 @@ import { ConfigurationError } from "./errors";
 export interface ModelMapRule {
   pattern: string;
   model: string;
-}
-
-/** `*` matches any run of characters; every other character is literal. */
-function globToRegExp(pattern: string): RegExp {
-  const escaped = pattern
-    .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
-    .replace(/\*/g, ".*");
-  return new RegExp(`^${escaped}$`);
 }
 
 /**
@@ -43,7 +40,7 @@ export function parseModelMap(value: string | undefined): ModelMapRule[] {
 /** First matching rule wins; no match leaves the model unchanged. */
 export function applyModelMap(model: string, rules: ModelMapRule[]): string {
   for (const rule of rules) {
-    if (globToRegExp(rule.pattern).test(model)) return rule.model;
+    if (globMatch(rule.pattern, model)) return rule.model;
   }
   return model;
 }

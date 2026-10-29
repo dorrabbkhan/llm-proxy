@@ -1722,3 +1722,36 @@ every failure a live-suite defect, not a babelgate defect — fixed as:
 - Re-record with `OPENROUTER_API_KEY=... scripts/demo/record-demo.sh`
   (VHS tape: `scripts/demo/demo.tape`); the script resolves the repo
   root via `git rev-parse --show-toplevel`, so it works from any clone.
+
+## v1.2 Task 1: behaviour-neutral refactor — registry, explicit inputs, split proxy.service
+
+- **Moved code** (spec §3.1, G7): `buildAuthHeaders` → `authHeaders(entry)` in
+  `src/routing/registry.ts`; the glob matcher (`globToRegExp` → `globMatch`) →
+  `src/routing/rules.ts` (re-exported from `utils/model-map.ts` so existing
+  imports keep working); the non-streaming chat body → `src/services/chat.service.ts`;
+  the streaming body → `src/services/chat-stream.service.ts`; the model-list body →
+  `src/services/models.service.ts`. `proxy.service.ts` keeps the provider-path
+  pre-check, route match on `config.sourceApi`, the Gemini unsupported-method check,
+  decode + schema validation, the empty-path-model check, `count_tokens`, `planRoute`
+  and dispatch.
+- **`toClientFacing` moved to `src/services/attempt-targets.ts`**, not kept in
+  `proxy.service.ts`: all three services need it and keeping it in the entry file
+  would have created a `proxy.service` ↔ services import cycle. `attempt-targets.ts`
+  also gained `canonicalForTarget` — the canonical copy carrying the routed model
+  and the target entry's `contextWindow` (spec §3.1: unset → field unset; the
+  decoded request is never mutated).
+- **`Config` → `GatewayConfig` / `EnvConfig`** (spec §3.1): `getConfig()` returns
+  `GatewayConfig`; `loadConfig()` returns `EnvConfig`, which keeps the v1.1 fields
+  (`targetApi`, `targetApiKey`, `targetBaseUrl`, `modelMap`, `targetContextWindow`)
+  so `env-config.test.ts` is untouched. **`sourceApi` stays on `GatewayConfig` as a
+  temporary field** — Task 2 removes it for request-path detection.
+- **Env-only mode** builds one `ProviderEntry` named after `TARGET_API` (also
+  `routing.defaultProvider`); `MODEL_MAP` entries become ordered `RouteRule`s to
+  it — identical resolution order to v1.1's `applyModelMap`.
+- **Scope limits kept:** `planRoute` implements spec §3.3 steps 3–4 only (rule
+  match, then default — explicit/alias/`when`/`fallback` are Task 3);
+  `attemptTargets` tries `plan.targets[0]` only and rethrows (Task 5 adds
+  fallback); the model list serves only the default provider (Task 6 merges).
+- `index.ts` startup log is `{port, defaultProvider, providers: names()}` — the
+  API key is never logged.
+- **Files outside the Files block:** none.

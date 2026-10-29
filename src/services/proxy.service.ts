@@ -1,33 +1,22 @@
-import { getConfig, type Config } from "../config/env-config";
+import { getConfig } from "../config/env-config";
 import {
   adapters,
   PROVIDER_ROUTES,
   type Provider,
-  type ProviderRoute,
 } from "../transformers";
 import { findSourceRoute } from "../transformers/adapters";
-import { postJson, getJson, postStream } from "./http-client";
-import { runStreamPipeline } from "./stream-pipeline";
-import { applyModelMap } from "../utils/model-map";
+import { planRoute } from "../routing/plan-route";
 import { estimateInputTokens } from "../utils/token-estimate";
-import { toClientError } from "./upstream-errors";
-import {
-  canonicalModelListSchema,
-  canonicalRequestSchema,
-  canonicalResponseSchema,
-} from "../types/canonical.schema";
-import type {
-  CanonicalRequest,
-  CanonicalStreamEvent,
-  StreamDecoder,
-} from "../types/canonical.types";
+import { canonicalRequestSchema } from "../types/canonical.schema";
 import {
   NotSupportedError,
   TransformError,
-  UpstreamError,
   ValidationError,
 } from "../utils/errors";
 import { logger } from "../utils/logger";
+import { proxyChat, type ChatInput } from "./chat.service";
+import { proxyChatStream } from "./chat-stream.service";
+import { proxyModelList } from "./models.service";
 
 export interface ProxyResult {
   body?: unknown;
@@ -43,24 +32,6 @@ export interface ProxyRequestOptions {
   query?: Record<string, string>;
   /** Client disconnect — aborts the upstream request */
   signal?: AbortSignal;
-}
-
-/**
- * Attach the spec §3.3 client-facing rendering to an upstream failure.
- * Only real upstream error statuses (≥ 400) go through the mapping
- * table — timeouts, transport failures and non-JSON 2xx replies already
- * carry their final client-facing message.
- */
-function toClientFacing(err: UpstreamError, target: Provider): UpstreamError {
-  if (err.upstreamStatus !== undefined && err.upstreamStatus >= 400) {
-    err.clientError = toClientError(
-      target,
-      err.upstreamStatus,
-      err.upstreamBody,
-      err.retryAfterSeconds,
-    );
-  }
-  return err;
 }
 
 /**
@@ -80,33 +51,9 @@ function methodFromPath(path: string): string {
 }
 
 /**
- * Provider-specific auth headers.
- */
-function buildAuthHeaders(
-  provider: Provider,
-  apiKey: string | undefined,
-): Record<string, string> {
-  if (!apiKey) return {};
-
-  switch (provider) {
-    case "openai":
-      return { Authorization: `Bearer ${apiKey}` };
-    case "anthropic":
-      return {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      };
-    case "gemini":
-      return { "x-goog-api-key": apiKey };
-    case "ollama":
-      return {};
-  }
-}
-
-/**
- * Full proxy orchestration:
+ * Thin entry over the routing layer (spec §3.1):
  *   path match → config → canonical boundary validation →
- *   transform → upstream call → transform back.
+ *   count_tokens → planRoute → chat/chat-stream/models services.
  *
  * Returns null when the path doesn't belong to the configured source
  * provider (route should call next() → 404).
@@ -127,14 +74,13 @@ export async function proxyRequest(
 
   const config = getConfig();
   const sourceApi = config.sourceApi;
-  const targetApi = config.targetApi;
 
   // Match the incoming path to a route on the configured source provider
   const route = findSourceRoute(sourceApi, method, path);
   if (!route) return null;
 
   if (route.kind === "models") {
-    return proxyModelList(route, config, sourceApi, targetApi, requestId);
+    return proxyModelList(sourceApi, route, config, requestId);
   }
 
   // Gemini paths carry a ":<method>" suffix — anything that isn't a
@@ -190,19 +136,26 @@ export async function proxyRequest(
     };
   }
 
-  // §3.5: MODEL_MAP rewrites the upstream-bound model; replies and
-  // stream encoders keep the name the client asked for.
+  // §3.3: resolve the model to an ordered list of targets — env mode
+  // produces MODEL_MAP routes then the single default provider.
   const requestedModel = modelFromPath ?? parsed.data.model;
-  const model = applyModelMap(requestedModel, config.modelMap);
-  parsed.data.model = model;
+  const plan = planRoute({
+    requestedModel,
+    estimatedInputTokens: estimateInputTokens(parsed.data),
+    routing: config.routing,
+    providerNames: new Set(config.registry.names()),
+  });
 
-  // §3.5: TARGET_CONTEXT_WINDOW → canonical contextWindow (Ollama num_ctx).
-  if (config.targetContextWindow !== undefined) {
-    parsed.data.config = {
-      ...parsed.data.config,
-      contextWindow: config.targetContextWindow,
-    };
-  }
+  const input: ChatInput = {
+    source: sourceApi,
+    sourceBody: body,
+    canonical: parsed.data,
+    requestedModel,
+    plan,
+    config,
+    requestId,
+    opts,
+  };
 
   // Streaming (spec §3.2): a `stream` body flag on the JSON-body sources,
   // the dedicated streaming endpoint on Gemini — which carries no body
@@ -211,279 +164,10 @@ export async function proxyRequest(
   // stream:true).
   if (parsed.data.stream === true || route.isStreamPath?.(path) === true) {
     parsed.data.stream = true;
-    return proxyChatStream(
-      parsed.data,
-      body,
-      model,
-      requestedModel,
-      config,
-      sourceApi,
-      targetApi,
-      requestId,
-      opts,
-    );
+    return proxyChatStream(input);
   }
 
-  const targetBody = adapters[targetApi].fromCanonicalRequest(parsed.data);
-
-  const targetRoute = PROVIDER_ROUTES[targetApi].find(
-    (r) => r.kind === "chat",
-  )!;
-  const url = `${config.targetBaseUrl}${targetRoute.requestPath(model)}`;
-
-  logger.info(
-    { requestId, sourceApi, targetApi, url, model, requestedModel },
-    "Forwarding request to upstream",
-  );
-
-  const upstream = await postJson({
-    url,
-    headers: buildAuthHeaders(targetApi, config.targetApiKey),
-    body: targetBody,
-    timeoutMs: config.upstreamTimeoutMs,
-    retries: config.upstreamRetries,
-    requestId,
-  }).catch((err) => {
-    throw err instanceof UpstreamError
-      ? toClientFacing(err, targetApi)
-      : err;
-  });
-
-  if (upstream.status < 200 || upstream.status >= 300) {
-    const err = new UpstreamError(
-      `Upstream ${targetApi} returned ${upstream.status}`,
-      upstream.status,
-      upstream.body,
-    );
-    err.retryAfterSeconds = upstream.retryAfterSeconds;
-    throw toClientFacing(err, targetApi);
-  }
-
-  // Target → Canonical → Source. §3.5: replies carry the model name the
-  // client asked for, not the mapped name sent upstream.
-  const canonicalResp = adapters[targetApi].toCanonicalResponse(
-    upstream.body,
-    model,
-  );
-  canonicalResp.model = requestedModel;
-
-  // Adapter bug detection (non-production only): canonical response
-  // should always be schema-valid
-  if (process.env.NODE_ENV !== "production") {
-    const respParsed = canonicalResponseSchema.safeParse(canonicalResp);
-    if (!respParsed.success) {
-      logger.error(
-        { requestId, issues: respParsed.error.issues },
-        "Canonical response failed schema validation — adapter bug",
-      );
-    }
-  }
-
-  logger.info(
-    {
-      requestId,
-      sourceApi,
-      targetApi,
-      model,
-      requestedModel,
-      inputTokens: canonicalResp.usage?.inputTokens,
-      outputTokens: canonicalResp.usage?.outputTokens,
-      finishReason: canonicalResp.finishReason,
-      upstreamDurationMs: upstream.durationMs,
-    },
-    "Request completed",
-  );
-
-  const sourceBody = adapters[sourceApi].fromCanonicalResponse(canonicalResp);
-
-  return { body: sourceBody };
-}
-
-/**
- * Streaming chat flow (spec §3.2): target decoder + source encoder,
- * postStream for upstream bytes, runStreamPipeline for the pipe.
- * All four adapters stream since v1.1 Task 7 — the v1.0.1
- * streaming-refusal path is gone. A Gemini target uses the route's
- * streamRequestPath (`:streamGenerateContent?alt=sse`); the others
- * stream on the chat path.
- */
-async function proxyChatStream(
-  canonical: CanonicalRequest,
-  sourceRequest: unknown,
-  model: string,
-  requestedModel: string,
-  config: Config,
-  sourceApi: Provider,
-  targetApi: Provider,
-  requestId: string,
-  opts?: ProxyRequestOptions,
-): Promise<ProxyResult> {
-  const decoder = adapters[targetApi].createStreamDecoder(model);
-  const encoder = adapters[sourceApi].createStreamEncoder({
-    sourceRequest,
-    query: opts?.query ?? {},
-    requestedModel,
-  });
-
-  const targetBody = adapters[targetApi].fromCanonicalRequest(canonical);
-
-  const targetRoute = PROVIDER_ROUTES[targetApi].find(
-    (r) => r.kind === "chat",
-  )!;
-  const url = `${config.targetBaseUrl}${
-    targetRoute.streamRequestPath?.(model) ?? targetRoute.requestPath(model)
-  }`;
-
-  logger.info(
-    { requestId, sourceApi, targetApi, url, model, requestedModel, stream: true },
-    "Forwarding request to upstream",
-  );
-
-  // Client disconnect aborts the upstream request; upstreamAc lets the
-  // pipeline's end (terminal event, failure) tear it down too — a bare
-  // body cancel doesn't reach the request on every transport.
-  const upstreamAc = new AbortController();
-  const upstream = await postStream({
-    url,
-    headers: buildAuthHeaders(targetApi, config.targetApiKey),
-    body: targetBody,
-    timeoutMs: config.upstreamTimeoutMs,
-    retries: config.upstreamRetries,
-    requestId,
-    signal: opts?.signal
-      ? AbortSignal.any([opts.signal, upstreamAc.signal])
-      : upstreamAc.signal,
-  }).catch((err) => {
-    throw err instanceof UpstreamError
-      ? toClientFacing(err, targetApi)
-      : err;
-  });
-
-  // Watch the event stream for the completion log line — the pipeline
-  // yields only encoded bytes, so the decoder is wrapped. Chunk contents
-  // are never logged (§3.2); only usage and the finish reason are.
-  const observed: CanonicalStreamEvent[] = [];
-  const recordingDecoder: StreamDecoder = {
-    feed(chunk) {
-      const events = decoder.feed(chunk);
-      observed.push(...events);
-      return events;
-    },
-    end() {
-      const events = decoder.end();
-      observed.push(...events);
-      return events;
-    },
-  };
-
-  const signal = opts?.signal ?? new AbortController().signal;
-
-  const chunks = (async function* (): AsyncGenerator<string> {
-    try {
-      yield* runStreamPipeline({
-        upstream: upstream.body,
-        decoder: recordingDecoder,
-        encoder,
-        idleMs: config.upstreamStreamIdleMs,
-        signal,
-      });
-    } finally {
-      // Whatever ended the pipe — terminal event, in-stream error,
-      // client disconnect — the upstream request is done with.
-      upstreamAc.abort();
-    }
-    const last = observed.at(-1);
-    if (last?.type === "message_end") {
-      const usageEvent = observed.find((e) => e.type === "usage");
-      logger.info(
-        {
-          requestId,
-          sourceApi,
-          targetApi,
-          model,
-          requestedModel,
-          stream: true,
-          inputTokens:
-            usageEvent?.type === "usage"
-              ? usageEvent.usage.inputTokens
-              : undefined,
-          outputTokens:
-            usageEvent?.type === "usage"
-              ? usageEvent.usage.outputTokens
-              : undefined,
-          finishReason: last.finishReason,
-          upstreamDurationMs: upstream.durationMs,
-        },
-        "Request completed",
-      );
-    }
-  })();
-
-  return { stream: { contentType: encoder.contentType, chunks } };
-}
-
-/**
- * GET /models flow — no request body, response transforms through
- * canonical like chat does.
- */
-async function proxyModelList(
-  route: ProviderRoute,
-  config: Config,
-  sourceApi: Provider,
-  targetApi: Provider,
-  requestId: string,
-): Promise<ProxyResult> {
-  const targetRoute = PROVIDER_ROUTES[targetApi].find(
-    (r) => r.kind === "models",
-  )!;
-  const url = `${config.targetBaseUrl}${targetRoute.requestPath()}`;
-
-  logger.info(
-    { requestId, sourceApi, targetApi, url },
-    "Forwarding models list request to upstream",
-  );
-
-  const upstream = await getJson({
-    url,
-    headers: buildAuthHeaders(targetApi, config.targetApiKey),
-    timeoutMs: config.upstreamTimeoutMs,
-    retries: config.upstreamRetries,
-    requestId,
-  }).catch((err) => {
-    throw err instanceof UpstreamError
-      ? toClientFacing(err, targetApi)
-      : err;
-  });
-
-  if (upstream.status < 200 || upstream.status >= 300) {
-    const err = new UpstreamError(
-      `Upstream ${targetApi} returned ${upstream.status}`,
-      upstream.status,
-      upstream.body,
-    );
-    err.retryAfterSeconds = upstream.retryAfterSeconds;
-    throw toClientFacing(err, targetApi);
-  }
-
-  const canonical = adapters[targetApi].toCanonicalModelList(upstream.body);
-
-  if (process.env.NODE_ENV !== "production") {
-    const parsed = canonicalModelListSchema.safeParse(canonical);
-    if (!parsed.success) {
-      logger.error(
-        { requestId, issues: parsed.error.issues },
-        "Canonical model list failed schema validation — adapter bug",
-      );
-    }
-  }
-
-  logger.info(
-    { requestId, sourceApi, targetApi, modelCount: canonical.models.length },
-    "Models list completed",
-  );
-
-  const sourceBody = adapters[sourceApi].fromCanonicalModelList(canonical);
-  return { body: sourceBody };
+  return proxyChat(input);
 }
 
 export { TransformError };

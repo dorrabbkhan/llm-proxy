@@ -13,9 +13,8 @@ Supported providers right now:
 - Ollama
 - Anthropic (Claude)
 
-<!-- OWNER: add docs/assets/demo.gif (from the OpenRouter gate run) before merge.
-![babelgate demo — Claude Code editing through the proxy](docs/assets/demo.gif)
--->
+![Claude Code fixing a failing test through babelgate on a free OpenRouter model](docs/assets/demo.gif)
+*Recorded with [scripts/demo](scripts/demo/); the model's thinking time is cut.*
 
 ## Quick start: Claude Code on a local model
 

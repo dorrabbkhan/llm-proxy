@@ -305,7 +305,9 @@ function clientRequest(
         : (SOURCE_FIXTURES[source].requests.tools ?? OLLAMA_TOOLS_REQUEST);
   // Gemini picks the stream by URL suffix (`:streamGenerateContent`),
   // not a `stream` body field; `alt=sse` selects SSE over the
-  // JSON-array form (spec §3.3).
+  // JSON-array form (spec §3.3). Ollama's /api/chat streams unless
+  // stream:false is sent (api.md, default true), so its non-streaming
+  // cells must opt out explicitly.
   const path =
     source === "gemini"
       ? `/v1beta/models/gemini-2.0-flash:${
@@ -317,6 +319,7 @@ function clientRequest(
     body: {
       ...(base as Record<string, unknown>),
       ...(streaming && source !== "gemini" && { stream: true }),
+      ...(!streaming && source === "ollama" && { stream: false }),
     },
   };
 }

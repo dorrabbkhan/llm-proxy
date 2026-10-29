@@ -46,11 +46,17 @@ const pairs = providers.flatMap((source) =>
   providers.map((target) => ({ source, target })),
 );
 
-// A valid chat request per source format
+// A valid non-streaming chat request per source format. Ollama's
+// /api/chat streams NDJSON unless stream:false is sent (api.md,
+// default true) — the explicit flag keeps these cases on the
+// non-streaming error path they assert.
 const SOURCE_CALL: Record<Provider, { path: string; body: object }> = {
   openai: { path: "/v1/chat/completions", body: openaiFixtures.requests.basic as object },
   gemini: { path: "/v1beta/models/gpt-4:generateContent", body: geminiFixtures.requests.basic as object },
-  ollama: { path: "/api/chat", body: ollamaFixtures.requests.basic as object },
+  ollama: {
+    path: "/api/chat",
+    body: { ...ollamaFixtures.requests.basic, stream: false } as object,
+  },
   anthropic: { path: "/v1/messages", body: anthropicFixtures.requests.basic as object },
 };
 

@@ -417,11 +417,13 @@ describe.each(TARGETS.map((target) => ({ target })))(
         // Gemini selects streaming by path suffix
         // (`:streamGenerateContent`), not a body flag; `alt=sse` picks
         // the SSE wire form over the streamed JSON array (spec §3.3,
-        // ai.google.dev/api/generate-content). Ollama's own API streams
-        // by default when `stream` is omitted, but babelgate's ollama
-        // source only streams on an explicit `stream: true`.
+        // ai.google.dev/api/generate-content). Ollama's /api/chat
+        // streams NDJSON when `stream` is omitted (api.md: "stream ...
+        // if false the response will be returned as a single response
+        // object"; default true), so the ollama source sends no flag
+        // and exercises the documented default.
         const extra: Record<string, unknown> =
-          source === 'gemini' ? {} : { stream: true };
+          source === 'gemini' || source === 'ollama' ? {} : { stream: true };
         if (source === 'openai') {
           // The OpenAI encoder only emits a usage chunk when the client
           // asked for it (stream_options.include_usage).
@@ -477,6 +479,10 @@ describe.each(TARGETS.map((target) => ({ target })))(
 
         const extra: Record<string, unknown> = {
           ...TOOL_EXTRA[source],
+          // Ollama's /api/chat streams by default (api.md) — the
+          // well-formed single-object reply this case parses needs
+          // the explicit opt-out.
+          ...(source === 'ollama' ? { stream: false } : {}),
           // Room for a full tool-call JSON payload.
           ...tokenBudget(source, target === 'ollama' ? 512 : 256),
         };

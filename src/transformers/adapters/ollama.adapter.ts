@@ -107,9 +107,12 @@ export function toCanonicalRequest(
     };
   }
 
-  // Canonical treats absent and stream:false identically — only an
-  // explicit true survives, keeping the request round-trip idempotent.
-  if (request.stream === true) {
+  // Ollama's /api/chat streams NDJSON unless the client sends
+  // stream:false (api.md: "stream ... if false the response will be
+  // returned as a single response object"; default true) — so an
+  // omitted flag maps to canonical stream:true and only an explicit
+  // false opts out.
+  if (request.stream !== false) {
     result.stream = true;
   }
 

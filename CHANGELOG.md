@@ -26,6 +26,15 @@ remaining source dialects.
   against OpenRouter. Ollama has no tool-choice wire field, so no
   forced-tool-call case exists for that source.
 
+### Fixed
+
+- **Ollama-format clients that omit `stream` now get an NDJSON stream**,
+  matching the Ollama API: `POST /api/chat` streams unless `stream:
+  false` is sent (api.md, default true). Previously the proxy answered
+  a single JSON object, so Ollama clients that rely on the documented
+  default never saw streaming. Send `stream: false` for the old
+  single-object behaviour.
+
 ## [1.1.1] - 2026-10-28
 
 ### Fixed

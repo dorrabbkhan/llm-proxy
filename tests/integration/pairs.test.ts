@@ -126,9 +126,17 @@ describe("provider pair coverage", () => {
         `missing basic request fixture for ${source}`,
       ).toBeDefined();
 
+      // Ollama's /api/chat streams NDJSON unless stream:false is sent
+      // (api.md, default true) — the single-object reply this check
+      // parses needs the explicit opt-out.
+      const body =
+        source === "ollama"
+          ? { ...(sourceFixture as Record<string, unknown>), stream: false }
+          : (sourceFixture as object);
+
       const res = await request(app)
         .post(PROVIDER_PATHS[source].pathPrefix)
-        .send(sourceFixture as object);
+        .send(body);
 
       expect(res.status, JSON.stringify(res.body)).toBe(200);
 

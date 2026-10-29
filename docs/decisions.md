@@ -1661,6 +1661,8 @@ every failure a live-suite defect, not a babelgate defect — fixed as:
   `tests/integration/stream-pairs.test.ts`,
   `tests/integration/errors.test.ts`,
   `tests/live/chat.live.test.ts`,
+  `README.md` and `docs/recipes/openai-sdk.md` (stale description of
+  the old Ollama-source default),
   `docs/decisions.md` (this entry).
   (`tests/live/stream.live.test.ts` and `CHANGELOG.md` are inside the
   task's Files block.)

@@ -421,9 +421,6 @@ fixtures/tests — see
 - **`count_tokens` is an estimate** (chars/4), marked by the
   `x-babelgate-token-estimate: true` header — enough for Claude Code's
   budgeting, not for billing.
-- **Ollama clients get a single JSON reply** when they omit `stream` —
-  unlike Ollama's own API, which streams NDJSON by default. Send
-  `"stream": false` explicitly to make that intent clear.
 - **Non-chat Gemini methods return 501** — `:countTokens`, `:embedContent`
   and friends aren't translated.
 - Some provider-specific features (citations, extra usage fields) map to

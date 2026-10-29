@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
-import { attemptTargets } from "./attempt-targets";
+import { attemptTargets, canonicalForTarget } from "./attempt-targets";
 import { createRegistry } from "../routing/registry";
+import type { ProviderEntry } from "../routing/registry";
 import type { RoutePlan } from "../routing/plan-route";
+import type { CanonicalRequest } from "../types/canonical.types";
 
 const registry = () =>
   createRegistry([
@@ -47,5 +49,45 @@ describe("attemptTargets", () => {
 
     expect(err).toBe(boom);
     expect(attempt).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("canonicalForTarget", () => {
+  const canonical = (): CanonicalRequest => ({
+    model: "decoded-model",
+    messages: [{ role: "user", content: "hi" }],
+  });
+  const entry = (contextWindow?: number): ProviderEntry => ({
+    name: "ollama",
+    type: "ollama",
+    baseUrl: "http://ollama.test",
+    ...(contextWindow === undefined ? {} : { contextWindow }),
+  });
+  const target = { provider: "ollama", model: "routed-model" };
+
+  it("canonicalForTarget leaves config absent when contextWindow is unset", () => {
+    const inRequest = canonical();
+
+    const out = canonicalForTarget(inRequest, entry(), target);
+
+    expect("config" in out).toBe(false);
+    expect(out.model).toBe("routed-model");
+    expect("config" in inRequest).toBe(false);
+    expect(inRequest.model).toBe("decoded-model");
+  });
+
+  it("canonicalForTarget sets contextWindow on a copied config", () => {
+    const inRequest: CanonicalRequest = {
+      ...canonical(),
+      config: { temperature: 0.2 },
+    };
+
+    const out = canonicalForTarget(inRequest, entry(32768), target);
+
+    expect(out.config?.contextWindow).toBe(32768);
+    expect(out.config?.temperature).toBe(0.2);
+    expect(out.config).not.toBe(inRequest.config);
+    expect(inRequest.config).toEqual({ temperature: 0.2 });
+    expect(inRequest.model).toBe("decoded-model");
   });
 });

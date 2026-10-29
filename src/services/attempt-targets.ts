@@ -44,7 +44,7 @@ export function toClientFacing(
 
 /**
  * The canonical request this attempt sends upstream: the routed model
- * and the target provider's contextWindow (unset → field unset,
+ * and the target provider's contextWindow (unset → config untouched,
  * spec §3.1), set on a COPY — the decoded request is never mutated.
  */
 export function canonicalForTarget(
@@ -52,11 +52,11 @@ export function canonicalForTarget(
   entry: ProviderEntry,
   target: RouteTarget,
 ): CanonicalRequest {
-  return {
-    ...canonical,
-    model: target.model,
-    config: { ...canonical.config, contextWindow: entry.contextWindow },
-  };
+  const out: CanonicalRequest = { ...canonical, model: target.model };
+  if (entry.contextWindow !== undefined) {
+    out.config = { ...canonical.config, contextWindow: entry.contextWindow };
+  }
+  return out;
 }
 
 /**

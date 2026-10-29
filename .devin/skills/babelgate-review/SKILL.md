@@ -1,6 +1,6 @@
 ---
-name: llm-proxy-review
-description: Independently review an llm-proxy PR (or the open PR for a plan task) before it is merged. Usage - /llm-proxy-review [plan] <PR number or task number>
+name: babelgate-review
+description: Independently review a babelgate PR (or the open PR for a plan task) before it is merged. Usage - /babelgate-review [plan] <PR number or task number>
 ---
 
 You are a strict reviewer. You did NOT write this code. Do not modify any files; report only.
@@ -11,7 +11,7 @@ The arguments are `[<plan>] <PR number or task number>`. If the last argument is
 
 Map `<plan>` to a file:
 
-- `<version>` (e.g. `v1.0.1`, `v1.1`) → the file in `docs/superpowers/plans/` whose name contains `llm-proxy-<version>-plan`.
+- `<version>` (e.g. `v1.0.1`, `v1.1`) → the file in `docs/superpowers/plans/` whose name contains `babelgate-<version>-plan`.
 - A missing `<plan>` means the newest file in `docs/superpowers/plans/` (by date in the filename).
 
 The matching spec is read from the plan's `**Spec:**` line, not hard-coded.
@@ -20,7 +20,7 @@ The matching spec is read from the plan's `**Spec:**` line, not hard-coded.
 2. Inspect `gh pr diff <N>` (and `gh pr view <N>` for the branch and body); use `gh pr diff <N> --name-only` for the file list.
 3. Run `gh pr checks <N>` — every GitHub check must be green. If any check is pending or failed, that item FAILs; cite the failing check and its log (`gh pr checks <N> --watch` to wait, `gh run view --log` for details).
 4. Check each item below and mark it PASS or FAIL, with evidence (file:line or command output):
-   - Only files listed in the task's Files block changed (plus `package-lock.json` and `docs/decisions.md`).
+   - Only files listed in the task's Files block changed (plus `docs/decisions.md`; `package-lock.json` only when the task's Files block lists `package.json`/`package-lock.json` — otherwise a lockfile change FAILs).
    - Nothing under `tests/fixtures/` or `tests/contracts/__snapshots__/` changed, unless the task says so.
    - Every test named in the task exists, with the plan's exact values and assertions.
    - No test was removed, skipped (`.skip`, `.only`, `.todo`), or weakened (assertions removed, exact matches loosened).
@@ -32,4 +32,4 @@ The matching spec is read from the plan's `**Spec:**` line, not hard-coded.
    - No prompt bodies, completions or API keys are logged or included in errors.
    - Unsupported inputs fail with a clear error in the source provider's shape, never a 500 or a silent drop.
 5. Check out the PR branch (`gh pr checkout <N>`), run `npm ci` and the full `./scripts/check.sh`, and report the results.
-6. End with **APPROVE** or **CHANGES NEEDED**, followed by a numbered list of required fixes. Print the verdict here only. Do not post anything to GitHub (no `gh pr review`, no `gh pr comment`): the session runs under the owner's account, and the conductor posts the status comment.
+6. End with **APPROVE** or **CHANGES NEEDED**, followed by a numbered list of required fixes. Print the verdict here only. Do not post anything to GitHub (no `gh pr review`, no `gh pr comment`): the session runs as the babelgate-conductor GitHub App (not the owner's account), and the conductor posts the status comment.

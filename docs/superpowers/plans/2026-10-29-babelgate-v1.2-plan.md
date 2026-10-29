@@ -1,6 +1,6 @@
 # babelgate v1.2 ("One endpoint, many providers") Implementation Plan
 
-> **For agentic workers (Devin):** Run each task in its own session with `/llm-proxy-task v1.2 <N>`. One task → one branch (`v1.2/task-<N>-<short-name>`) → one PR. Steps use checkbox (`- [ ]`) syntax. Read `AGENTS.md`, this plan's Global Constraints and Review Focus, and the spec sections each task names. Use `./scripts/check.sh quick` while iterating and `./scripts/check.sh` before pushing. Verify every write with `git diff`. (The file name keeps `llm-proxy` so the agent skills find it.)
+> **For agentic workers (Devin):** Run each task in its own session with `/babelgate-task v1.2 <N>`. One task → one branch (`v1.2/task-<N>-<short-name>`) → one PR. Steps use checkbox (`- [ ]`) syntax. Read `AGENTS.md`, this plan's Global Constraints and Review Focus, and the spec sections each task names. Use `./scripts/check.sh quick` while iterating and `./scripts/check.sh` before pushing. Verify every write with `git diff`.
 
 **Goal:** One babelgate instance serves every client format on one port and routes each request to one of several configured providers by model name, with aliases, a long-context condition, fallbacks before the first byte and a merged model list.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** As v1.1 (Node ≥ 20, TypeScript 5 strict, Express 5, Zod 4, pino, vitest 3, msw 2, supertest). Added: `yaml` (eemeli/yaml, latest 2.x, zero dependencies) — Task 4 only.
 
-**Spec:** `docs/superpowers/specs/2026-10-29-babelgate-v1.2-design.md`. Parent: `docs/superpowers/specs/2026-10-26-llm-proxy-roadmap-design.md`.
+**Spec:** `docs/superpowers/specs/2026-10-29-babelgate-v1.2-design.md`. Parent: `docs/superpowers/specs/2026-10-26-babelgate-roadmap-design.md`.
 
 **Decided with the owner (2026-10-29), spec §6:** D1 scope (gateway + Claude Code long-context routing + v1.1 gate gaps as release gates); D2 unmatched model → default provider, no built-in prefix routing; D3 YAML for ≥ 2 providers, keys by env var name only; D4 rented-GPU Ollama gate; D5 thin routing layer; D6 `yaml` dependency.
 

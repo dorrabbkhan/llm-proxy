@@ -2,8 +2,8 @@
 
 **Date:** 2026-10-27 · **Status:** design approved section by section by the owner on 2026-10-27; this
 written spec awaits owner review · **Roadmap:** `docs/roadmap.md` (Phase 1, v1.1) ·
-**Parent spec:** `docs/superpowers/specs/2026-10-26-llm-proxy-roadmap-design.md` ·
-**Previous version:** `docs/superpowers/specs/2026-10-26-llm-proxy-v1.0.1-design.md`
+**Parent spec:** `docs/superpowers/specs/2026-10-26-babelgate-roadmap-design.md` ·
+**Previous version:** `docs/superpowers/specs/2026-10-26-babelgate-v1.0.1-design.md`
 
 The project is renamed from `llm-proxy` to **babelgate** in this version (§3.7). This spec uses the new
 name; earlier specs, plans and decisions keep the old one as history.

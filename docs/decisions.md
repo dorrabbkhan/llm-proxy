@@ -1722,3 +1722,41 @@ every failure a live-suite defect, not a babelgate defect — fixed as:
 - Re-record with `OPENROUTER_API_KEY=... scripts/demo/record-demo.sh`
   (VHS tape: `scripts/demo/demo.tape`); the script resolves the repo
   root via `git rev-parse --show-toplevel`, so it works from any clone.
+
+## Agent tooling and planning docs renamed llm-proxy → babelgate (2026-10-29)
+
+- **Renamed paths (git mv):** `.devin/skills/llm-proxy-task/` → `.devin/skills/babelgate-task/`,
+  `.devin/skills/llm-proxy-review/` → `.devin/skills/babelgate-review/`,
+  `scripts/llm-proxy-loop.sh` → `scripts/babelgate-loop.sh`,
+  `docs/superpowers/plans/2026-10-2{6,7,9}-llm-proxy-v{1.0.1,1.1,1.2}-plan.md` → the same names with
+  `babelgate`, `docs/superpowers/specs/2026-10-26-llm-proxy-roadmap-design.md` →
+  `2026-10-26-babelgate-roadmap-design.md`, `docs/superpowers/specs/2026-10-26-llm-proxy-v1.0.1-design.md`
+  → `2026-10-26-babelgate-v1.0.1-design.md`. The skills' plan mapping is now
+  `babelgate-<version>-plan`; invocations are `/babelgate-task` and `/babelgate-review`; the
+  `.claude/settings.json` allow rule is `Bash(scripts/babelgate-loop.sh:*)`.
+- **`llm-proxy` → `babelgate` in text repo-wide** — including forward-looking names (`@babelgate/team`,
+  `babelgate-team`, `babelgate.yaml` in the roadmap spec) and spec/plan titles.
+- **Exceptions kept** (changing them would make the statement false or rewrite history):
+  `docs/decisions.md` entries before this one and `CHANGELOG.md`; lines that describe the rename itself
+  or the npm-name collision (v1.1 spec "renamed from `llm-proxy`", F8 "The npm name `llm-proxy` belongs
+  to another project", the v1.1 plan's Task 1 rename-scope lines and header note, the roadmap spec's open
+  question about "llm-proxy" being a crowded name); the v1.0.1 plan's historical task text (NOTICE name,
+  `github.com/dorrabbkhan/llm-proxy`, the `does-not-exist-llm-proxy` model name in its live-test step).
+- **Local paths:** the conductor's prompt/output directory is now `~/babelgate-conductor` and the local
+  clone path `~/babelgate` (CLAUDE.md, CONDUCTOR-SETUP.md, `.claude/commands/`, `devin.sh`).
+- **`tests/live/errors.live.test.ts`:** `UNKNOWN_MODEL` input `'does-not-exist-llm-proxy'` →
+  `'does-not-exist-babelgate'` — an input model name, not an expected value; nothing else in the file changed.
+- **Conductor/Devin setup fixes (v1.2 session problems):**
+  - `scripts/conductor/devin.sh`: output dir `~/babelgate-conductor`; the default repo root is resolved
+    from the script's own location (`git -C "$(dirname "$0")" rev-parse --show-toplevel`), not a
+    hard-coded home path.
+  - `scripts/conductor/notify.sh`: notification title "babelgate conductor".
+  - `scripts/babelgate-loop.sh`: state dir `babelgate-loop`; falls back to `${TMPDIR:-/tmp}` when
+    `${XDG_RUNTIME_DIR}` is unset or not writable (Devin's read-only XDG_RUNTIME_DIR killed every v1.2 watch).
+  - `.claude/commands/{conduct,run-plan,inbox}.md`: this Claude Code version numbers command arguments
+    from `$0`; each file gained an `Arguments as typed: $ARGUMENTS` line and updated argument hints.
+  - `.devin/skills/babelgate-review/SKILL.md`: step 6 notes the review session runs as the
+    babelgate-conductor GitHub App (not the owner's account); step 4 allows `package-lock.json` only when
+    the task's Files block lists `package.json`/`package-lock.json`, else a lockfile change FAILs.
+  - `docs/conductor/standing-notes.md` gained a Devin-sandbox paragraph (npm cache EROFS, XDG_RUNTIME_DIR).
+  - Added `docs/conductor/notes/v1.2/task{2,4,5}.md` per-task conductor notes.

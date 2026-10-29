@@ -1,6 +1,6 @@
 ---
-name: llm-proxy-task
-description: Implement one numbered task from an llm-proxy plan, test-first, on its own branch. Usage - /llm-proxy-task [plan] <task number>
+name: babelgate-task
+description: Implement one numbered task from a babelgate plan, test-first, on its own branch. Usage - /babelgate-task [plan] <task number>
 ---
 
 You are implementing exactly ONE task from a plan file. The arguments are `[<plan>] <task number>`. If no task number was given, ask for one and stop.
@@ -9,7 +9,7 @@ You are implementing exactly ONE task from a plan file. The arguments are `[<pla
 
 Map `<plan>` to a file:
 
-- `<version>` (e.g. `v1.0.1`, `v1.1`) → the file in `docs/superpowers/plans/` whose name contains `llm-proxy-<version>-plan`.
+- `<version>` (e.g. `v1.0.1`, `v1.1`) → the file in `docs/superpowers/plans/` whose name contains `babelgate-<version>-plan`.
 - A missing `<plan>` (only a task number was given) means the newest file in `docs/superpowers/plans/` (by date in the filename).
 - If no file matches, stop and say so.
 
@@ -33,7 +33,7 @@ The matching spec is read from the plan's `**Spec:**` line, not hard-coded.
    9a. If the task changes behaviour a client can see (wire format, errors, streaming, routes), exercise it once with a real HTTP request against `npm run dev` and an msw- or local-Ollama-backed upstream, and paste the request and response (keys redacted) into the PR description.
    9b. Compare `git diff --name-only main` with the task's Files block. For every file outside it, add a "Files outside the Files block" line to this task's entry in docs/decisions.md, saying why each was needed. Include it in the same commit.
 10. Commit with the message the task specifies, push the branch, and open a PR with `gh pr create` — the PR body is the final summary headings below.
-11. Start `scripts/llm-proxy-loop.sh watch` so the check watch runs in the background. Do not run `/llm-proxy-review` on your own PR and do not post reviews or comments on it: the conductor starts an independent review in a fresh session. Block on `scripts/llm-proxy-loop.sh await` only before writing the final summary. Fix failures by pushing to the same branch.
+11. Start `scripts/babelgate-loop.sh watch` so the check watch runs in the background. Do not run `/babelgate-review` on your own PR and do not post reviews or comments on it: the conductor starts an independent review in a fresh session. Block on `scripts/babelgate-loop.sh await` only before writing the final summary. Fix failures by pushing to the same branch.
 12. Finish by reporting the PR URL and the check results, plus the summary under these headings: Task; Spec sections implemented; Tests added; Ambiguities I resolved (or "None"); Follow-ups noticed.
 
 ## Rules

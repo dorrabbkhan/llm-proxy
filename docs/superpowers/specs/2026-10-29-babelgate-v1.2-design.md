@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-29 · **Status:** design approved section by section by the owner on 2026-10-29; this
 written spec awaits owner review · **Roadmap:** `docs/roadmap.md` (Phase 2, v1.2) ·
-**Parent spec:** `docs/superpowers/specs/2026-10-26-llm-proxy-roadmap-design.md` ·
+**Parent spec:** `docs/superpowers/specs/2026-10-26-babelgate-roadmap-design.md` ·
 **Previous version:** `docs/superpowers/specs/2026-10-27-babelgate-v1.1-design.md`
 
 ## 1. Purpose

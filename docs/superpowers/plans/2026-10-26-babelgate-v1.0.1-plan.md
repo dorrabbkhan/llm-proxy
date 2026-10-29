@@ -1,6 +1,6 @@
-# llm-proxy v1.0.1 (Correctness patch and public hygiene) Implementation Plan
+# babelgate v1.0.1 (Correctness patch and public hygiene) Implementation Plan
 
-> **For agentic workers (Devin):** Run each task in its own session with `/llm-proxy-task v1.0.1 <N>`. One task → one branch (`v1.0.1/task-<N>-<short-name>`) → one PR. Steps use checkbox (`- [ ]`) syntax. Read `AGENTS.md`, this plan's Global Constraints and Review Focus, and the spec sections each task names. Use `./scripts/check.sh quick` while iterating and `./scripts/check.sh` before pushing. Verify every write with `git diff`.
+> **For agentic workers (Devin):** Run each task in its own session with `/babelgate-task v1.0.1 <N>`. One task → one branch (`v1.0.1/task-<N>-<short-name>`) → one PR. Steps use checkbox (`- [ ]`) syntax. Read `AGENTS.md`, this plan's Global Constraints and Review Focus, and the spec sections each task names. Use `./scripts/check.sh quick` while iterating and `./scripts/check.sh` before pushing. Verify every write with `git diff`.
 
 **Goal:** Make v1.0's claims true against real upstreams — Ollama works, Gemini clients get their model, every error arrives in the client's own provider format, `PROXY_API_KEY` works with every SDK — and make the repo ready for outside contributors.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** As v1.0 (Node ≥ 20, TypeScript 5 strict, Express 5, Zod 4, pino, vitest 3, msw 2, supertest). Added: none at runtime. CI: GitHub Actions, `contributor-assistant/github-action` (CLA Assistant Lite), the `ollama/ollama` image for the nightly live job.
 
-**Spec:** `docs/superpowers/specs/2026-10-26-llm-proxy-v1.0.1-design.md`. Parent: `docs/superpowers/specs/2026-10-26-llm-proxy-roadmap-design.md`.
+**Spec:** `docs/superpowers/specs/2026-10-26-babelgate-v1.0.1-design.md`. Parent: `docs/superpowers/specs/2026-10-26-babelgate-roadmap-design.md`.
 
 **Decided with the owner (2026-10-26), reflected in the spec:** D1 upstream 401/403 → client 502; D2 CLA Assistant Lite; D3 error-shape change ships in 1.0.1 with a CHANGELOG note; D4 nightly live CI is Ollama-only until the owner adds paid keys as secrets; D5 `qwen3:0.6b` is the default live model → changed by the owner 2026-10-27 to `qwen2.5:0.5b` (thinking output made the live chat test flaky); `qwen3:0.6b` stays opt-in via `LIVE_OLLAMA_MODEL`.
 

@@ -1,11 +1,11 @@
-# llm-proxy roadmap — Design Spec
+# babelgate roadmap — Design Spec
 
 **Date:** 2026-10-26 · **Status:** approved in brainstorming, awaiting written review ·
 **Roadmap:** `docs/roadmap.md`
 
 ## 1. Purpose
 
-Decide what llm-proxy is for, who it serves in what order, how it can make money, and what must happen
+Decide what babelgate is for, who it serves in what order, how it can make money, and what must happen
 next versus later. This spec records the reasoning; `docs/roadmap.md` is the plan derived from it. Each
 version on the roadmap gets its own spec → plan → implementation cycle; this document does not specify
 any version in implementation detail.
@@ -69,9 +69,9 @@ as a headline; it falls out of v1.1 + v1.5's response cache at little extra cost
 ## 4. Positioning
 
 ### 4.1 Landscape
-| Tool | Shape | Where llm-proxy differs |
+| Tool | Shape | Where babelgate differs |
 |---|---|---|
-| LiteLLM | Large Python gateway, OpenAI-format in, many providers out | llm-proxy accepts every supported format *in*, not just OpenAI; small, typed and contract-tested |
+| LiteLLM | Large Python gateway, OpenAI-format in, many providers out | babelgate accepts every supported format *in*, not just OpenAI; small, typed and contract-tested |
 | OpenRouter | Hosted token reseller | Self-hosted; no reselling (non-goal) |
 | Portkey, Helicone | Hosted/OSS gateways and observability | Lighter; local-first; translation inspector |
 | claude-code-router and similar | Single-purpose Claude Code shims | General gateway with the same hook as its entry point |
@@ -101,7 +101,7 @@ OpenAI-compatible targets (v1.2) cover the long tail as config, not code.
   market; AGPL (NeoPhylo's choice) would put off the companies Phase 3 sells to.
 - **CLA from the first outside contribution**, so relicensing stays possible.
 - **The paid boundary is team governance:** virtual keys, budgets, audit, SSO, policies, per-team
-  routing and evals. These live in `@llm-proxy/team`, a commercial package in a private repo that
+  routing and evals. These live in `@babelgate/team`, a commercial package in a private repo that
   depends only on the public plugin API (v2.0). The core never contains private code.
 - **Free stays generous:** multiple labelled keys, per-key usage, cost tracking, UI, routing, fallbacks
   and cache are all open. Individuals and homelabs never hit a paywall.
@@ -117,7 +117,7 @@ OpenAI-compatible targets (v1.2) cover the long tail as config, not code.
   `.env` and no API-key patterns. It stays public; making it private would gain nothing.
 - **Public is not announced.** The repo is public now; the announcement waits for v1.1.
 - The CLA bot must be active before the first outside PR is merged.
-- `llm-proxy-team` is private from creation (start of v2.1). The hosted control plane, if built, is
+- `babelgate-team` is private from creation (start of v2.1). The hosted control plane, if built, is
   private.
 - Specs, plans and decisions for open features live publicly in `docs/`. Pricing details and customer
   notes live in the private repo.
@@ -132,7 +132,7 @@ OpenAI-compatible targets (v1.2) cover the long tail as config, not code.
 - **Fail honestly in the client's dialect:** unsupported features return a clear error shaped like the
   source provider's errors (e.g. `501` for embeddings on Anthropic), never a crash or silent drop.
 - **Privacy by default:** prompt bodies are never persisted unless explicitly enabled.
-- **Config is optional:** env vars cover the single-target case; `llm-proxy.yaml` appears only when
+- **Config is optional:** env vars cover the single-target case; `babelgate.yaml` appears only when
   routing needs it (v1.2).
 - **A decisions log** (`docs/decisions.md`) records every deviation from a plan or spec.
 

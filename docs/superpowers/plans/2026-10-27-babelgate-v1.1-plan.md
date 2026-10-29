@@ -1,6 +1,6 @@
 # babelgate v1.1 ("Claude Code on anything") Implementation Plan
 
-> **For agentic workers (Devin):** Run each task in its own session with `/llm-proxy-task v1.1 <N>`. One task → one branch (`v1.1/task-<N>-<short-name>`) → one PR. Steps use checkbox (`- [ ]`) syntax. Read `AGENTS.md`, this plan's Global Constraints and Review Focus, and the spec sections each task names. Use `./scripts/check.sh quick` while iterating and `./scripts/check.sh` before pushing. Verify every write with `git diff`. (The file name keeps `llm-proxy` so the agent skills find it; the product is renamed in Task 1.)
+> **For agentic workers (Devin):** Run each task in its own session with `/babelgate-task v1.1 <N>`. One task → one branch (`v1.1/task-<N>-<short-name>`) → one PR. Steps use checkbox (`- [ ]`) syntax. Read `AGENTS.md`, this plan's Global Constraints and Review Focus, and the spec sections each task names. Use `./scripts/check.sh quick` while iterating and `./scripts/check.sh` before pushing. Verify every write with `git diff`. (The file name keeps `llm-proxy` so the agent skills find it; the product is renamed in Task 1.)
 
 **Goal:** Launch: Claude Code (Anthropic format) and OpenAI-SDK apps work against Ollama and OpenAI-compatible backends with streaming and tools, from one `npx babelgate` command.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** As v1.0.1 (Node ≥ 20, TypeScript 5 strict, Express 5, Zod 4, pino, vitest 3, msw 2, supertest). The provider SDKs already in devDependencies (`openai`, `@anthropic-ai/sdk`, `@google/generative-ai`, `ollama`) are used as stream parsers in tests. Added: none.
 
-**Spec:** `docs/superpowers/specs/2026-10-27-babelgate-v1.1-design.md`. Parent: `docs/superpowers/specs/2026-10-26-llm-proxy-roadmap-design.md`.
+**Spec:** `docs/superpowers/specs/2026-10-27-babelgate-v1.1-design.md`. Parent: `docs/superpowers/specs/2026-10-26-babelgate-roadmap-design.md`.
 
 **Decided with the owner (2026-10-27), reflected in the spec §6:** D1 one version, two milestones (launch on the Claude Code path); D2 name babelgate; D3 release gate on local `qwen3-coder:30b` plus OpenRouter; D4 event-based canonical stream; D5 `UPSTREAM_STREAM_IDLE_MS` default 300 000.
 

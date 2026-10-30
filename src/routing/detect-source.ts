@@ -6,10 +6,17 @@ import { PROVIDER_ROUTES, type Provider } from "../transformers/adapters";
  * speaks, over the same PROVIDER_ROUTES table the services match on.
  *
  * The only ambiguous route is `GET /v1/models`, shared by openai and
- * anthropic. Anthropic SDKs and Claude Code always send
- * `anthropic-version` (@anthropic-ai/sdk client.js:842 — unconditional
- * default header), so its presence selects anthropic and its absence
- * openai. `headers` are the request's own (Node lowercases the names).
+ * anthropic. Anthropic SDKs always send `anthropic-version`
+ * (@anthropic-ai/sdk client.js:842 — unconditional default header).
+ * Claude Code model discovery does not: its gateway docs ("Model
+ * discovery → Request and response",
+ * https://code.claude.com/docs/en/llm-gateway-protocol) show
+ * `GET /v1/models?limit=1000` carrying `Authorization`, `x-api-key` and
+ * `ANTHROPIC_CUSTOM_HEADERS` — Claude Code ≥ 2.1.248 sends both
+ * credential headers. Either `anthropic-version` or `x-api-key` marks
+ * the client as anthropic; OpenAI SDKs authenticate with
+ * `Authorization: Bearer` alone, so neither header → openai.
+ * `headers` are the request's own (Node lowercases the names).
  */
 export function detectSource(
   method: string,
@@ -23,10 +30,12 @@ export function detectSource(
       ),
   );
   if (matches.length === 0) return undefined;
-  const anthropicVersion = Object.keys(headers).some(
-    (name) => name.toLowerCase() === "anthropic-version",
+  const headerNames = new Set(
+    Object.keys(headers).map((name) => name.toLowerCase()),
   );
-  if (anthropicVersion && matches.includes("anthropic")) {
+  const anthropicClient =
+    headerNames.has("anthropic-version") || headerNames.has("x-api-key");
+  if (anthropicClient && matches.includes("anthropic")) {
     return "anthropic";
   }
   return matches[0];

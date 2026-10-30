@@ -1856,6 +1856,21 @@ every failure a live-suite defect, not a babelgate defect — fixed as:
   - `src/app.test.ts` `"rejects proxy requests with 401 when key is set
     and missing/wrong"`: `error.code` `"UNAUTHORIZED"` →
     `"authentication"`. No other assertion in that file changes.
+- **Deviation from spec §3.2 tie-break (owner-requested 2026-10-30):**
+  `GET /v1/models` resolves to anthropic when `anthropic-version` OR
+  `x-api-key` is present (header names case-insensitive, any value);
+  the spec's fallback "`x-api-key` present AND `Authorization` absent
+  → anthropic" becomes "`x-api-key` present → anthropic", because
+  Claude Code ≥ 2.1.248 sends both credential headers on discovery.
+  Evidence: the Claude Code gateway docs ("Model discovery → Request
+  and response",
+  https://code.claude.com/docs/en/llm-gateway-protocol, read
+  2026-10-30) list only `Authorization`, `x-api-key` and
+  `ANTHROPIC_CUSTOM_HEADERS` on `GET /v1/models?limit=1000` — no
+  `anthropic-version` — while OpenAI SDKs authenticate with
+  `Authorization: Bearer` only.
 - **Files outside the Files block:** `tests/integration/pairs.test.ts`,
   `src/services/proxy.service.test.ts` and `src/app.test.ts` (the
-  owner-approved adaptations above).
+  owner-approved adaptations above); `.env.example` and
+  `src/transformers/adapters/index.ts` (comment-only) — both
+  owner-requested 2026-10-30.

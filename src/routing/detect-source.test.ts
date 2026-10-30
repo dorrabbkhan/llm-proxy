@@ -4,8 +4,11 @@ import { detectSource } from "./detect-source";
 /**
  * Path-based client-format detection (spec §3.2): every provider's
  * routes answer on one port. `GET /v1/models` is the one ambiguous
- * path — Anthropic SDKs and Claude Code always send `anthropic-version`
- * (@anthropic-ai/sdk client.js:842, unconditional default header).
+ * path — Anthropic SDKs always send `anthropic-version`
+ * (@anthropic-ai/sdk client.js:842, unconditional default header) and
+ * Claude Code model discovery sends `x-api-key`; either marks the
+ * client as anthropic (docs:
+ * https://code.claude.com/docs/en/llm-gateway-protocol).
  */
 
 const noHeaders = {};
@@ -55,6 +58,35 @@ describe("detectSource", () => {
 
   it("GET /v1/models without anthropic-version → openai", () => {
     expect(detectSource("GET", "/v1/models", noHeaders)).toBe("openai");
+  });
+
+  it("GET /v1/models with x-api-key and Authorization, no anthropic-version → anthropic", () => {
+    expect(
+      detectSource("GET", "/v1/models", {
+        "x-api-key": "sk-ant-…",
+        authorization: "Bearer sk-ant-…",
+      }),
+    ).toBe("anthropic");
+  });
+
+  it("GET /v1/models with only x-api-key → anthropic", () => {
+    expect(
+      detectSource("GET", "/v1/models", { "x-api-key": "sk-ant-…" }),
+    ).toBe("anthropic");
+  });
+
+  it("GET /v1/models with only Authorization: Bearer → openai", () => {
+    expect(
+      detectSource("GET", "/v1/models", {
+        authorization: "Bearer sk-…",
+      }),
+    ).toBe("openai");
+  });
+
+  it("GET /v1/models with X-Api-Key (mixed case) → anthropic", () => {
+    expect(
+      detectSource("GET", "/v1/models", { "X-Api-Key": "sk-ant-…" }),
+    ).toBe("anthropic");
   });
 
   // Carried over from resolve-source.test.ts: detection is pure

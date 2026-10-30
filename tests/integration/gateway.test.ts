@@ -104,6 +104,21 @@ describe("gateway: every format on one port (spec §3.2)", () => {
     expect(capturedRequests.gemini).toHaveLength(0);
   });
 
+  it("claude code model discovery gets the anthropic list", async () => {
+    // Claude Code ≥ 2.1.248 sends x-api-key + Authorization on
+    // GET /v1/models?limit=1000 and no anthropic-version
+    // (docs: code.claude.com/docs/en/llm-gateway-protocol).
+    const res = await request(app)
+      .get("/v1/models?limit=1000")
+      .set("x-api-key", "test-key")
+      .set("authorization", "Bearer test-key");
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    const body = res.body as { data?: { type?: string }[] };
+    expect(Array.isArray(body.data)).toBe(true);
+    expect(body.data![0]!.type).toBe("model");
+  });
+
   it("auth errors render in the detected dialect", async () => {
     // PROXY_API_KEY is read when the app module is built — fresh module
     // graph per errors.test.ts's authedApp.

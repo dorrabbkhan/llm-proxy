@@ -17,6 +17,15 @@
   3. `src/services/proxy.service.test.ts`: pass `{ source: "<provider>" }` to each `proxyRequest()` call,
      matching that test's path; assertions unchanged. Record this file and `pairs.test.ts` under "Files
      outside the Files block" in docs/decisions.md.
+- **Owner decision 2026-10-30 (option A): two more named changes, approved.** These count as named changes,
+  listed old → new in the PR body and the decisions entry, marked "approved by the owner, conductor
+  escalation option A (2026-10-30)". Cause: `detectSource` reads no config, so errors on
+  `/v1/chat/completions` now render in the openai dialect (spec §3.2).
+  1. `src/app.test.ts` "returns 413 for bodies over MAX_BODY_SIZE": `error.code` `"PAYLOAD_TOO_LARGE"` →
+     `"request_too_large"`.
+  2. `src/app.test.ts` "rejects proxy requests with 401 when key is set and missing/wrong": `error.code`
+     `"UNAUTHORIZED"` → `"authentication"`.
+  No other assertion in that file changes. Record `src/app.test.ts` under "Files outside the Files block".
 - **Step 0 evidence first.** Cite the `@anthropic-ai/sdk` file/line in node_modules showing `anthropic-version`
   is always sent, plus Claude Code's gateway docs URL and date, in the decisions entry. If not always sent,
   implement the spec's tie-break and say so. Already confirmed by the conductor:

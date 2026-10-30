@@ -1848,6 +1848,14 @@ every failure a live-suite defect, not a babelgate defect — fixed as:
   - `proxy.service.test.ts`: each `proxyRequest()` call passes
     `{ source: "<provider>" }` matching its path; assertions unchanged;
     dead `process.env.SOURCE_API` lines removed.
-- **Files outside the Files block:** `tests/integration/pairs.test.ts`
-  and `src/services/proxy.service.test.ts` (the owner-approved
-  adaptations above).
+- **Approved by the owner, conductor escalation option A
+  (2026-10-30):** `detectSource` reads no config, so errors on
+  `/v1/chat/completions` now render in the openai dialect (spec §3.2).
+  - `src/app.test.ts` `"returns 413 for bodies over MAX_BODY_SIZE"`:
+    `error.code` `"PAYLOAD_TOO_LARGE"` → `"request_too_large"`.
+  - `src/app.test.ts` `"rejects proxy requests with 401 when key is set
+    and missing/wrong"`: `error.code` `"UNAUTHORIZED"` →
+    `"authentication"`. No other assertion in that file changes.
+- **Files outside the Files block:** `tests/integration/pairs.test.ts`,
+  `src/services/proxy.service.test.ts` and `src/app.test.ts` (the
+  owner-approved adaptations above).

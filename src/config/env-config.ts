@@ -7,6 +7,7 @@ import {
 } from "../routing/registry";
 import type { RoutingConfig } from "../routing/plan-route";
 import { ConfigurationError } from "../utils/errors";
+import { logger } from "../utils/logger";
 
 dotenv.config({ quiet: true });
 
@@ -14,9 +15,9 @@ const VALID_PROVIDERS: Provider[] = ["openai", "gemini", "ollama", "anthropic"];
 
 /**
  * Gateway-shaped config (spec §3.1): scalars plus the provider registry
- * and routing table the services consume. `sourceApi` is temporary —
- * the configured source format still decides the client dialect until
- * Task 2 retires it for request-path detection.
+ * and routing table the services consume. There is no configured
+ * source format — the request path decides the client dialect
+ * (spec §3.2).
  */
 export interface GatewayConfig {
   port: number;
@@ -28,8 +29,6 @@ export interface GatewayConfig {
   upstreamStreamIdleMs: number;
   registry: ProviderRegistry;
   routing: RoutingConfig;
-  /** Temporary: removed in Task 2 */
-  sourceApi: Provider;
 }
 
 /**
@@ -45,6 +44,11 @@ export interface EnvConfig extends GatewayConfig {
   modelMap: ModelMapRule[];
   /** Minimum context window the target should allocate (Ollama num_ctx) */
   targetContextWindow?: number;
+  /**
+   * Environment variables that were set but are ignored (spec §3.2):
+   * `["SOURCE_API"]` when set, else `[]`. getConfig() warns once.
+   */
+  deprecatedEnv: string[];
 }
 
 function isValidProvider(value: string): value is Provider {
@@ -59,18 +63,11 @@ function normalizeProvider(value: string): Provider {
  * Loads configuration from environment variables
  */
 export function loadConfig(): EnvConfig {
-  if (!process.env.SOURCE_API || !process.env.TARGET_API) {
-    throw new Error(
-      "SOURCE_API and TARGET_API environment variables are required",
-    );
+  if (!process.env.TARGET_API) {
+    throw new Error("TARGET_API environment variable is required");
   }
 
-  const sourceApi = process.env.SOURCE_API;
   const targetApi = process.env.TARGET_API;
-
-  if (!isValidProvider(sourceApi)) {
-    throw new Error(`SOURCE_API must be one of: ${VALID_PROVIDERS.join(", ")}`);
-  }
 
   if (!isValidProvider(targetApi)) {
     throw new Error(`TARGET_API must be one of: ${VALID_PROVIDERS.join(", ")}`);
@@ -133,7 +130,6 @@ export function loadConfig(): EnvConfig {
   };
 
   return {
-    sourceApi: normalizeProvider(sourceApi),
     targetApi: normalizedTarget,
     port: process.env.PORT ? parseInt(process.env.PORT, 10) : 3000,
     targetApiKey,
@@ -152,6 +148,8 @@ export function loadConfig(): EnvConfig {
     targetContextWindow,
     registry,
     routing,
+    deprecatedEnv:
+      process.env.SOURCE_API !== undefined ? ["SOURCE_API"] : [],
   };
 }
 
@@ -175,6 +173,11 @@ let _config: EnvConfig | null = null;
 export function getConfig(): GatewayConfig {
   if (!_config) {
     _config = loadConfig();
+    if (_config.deprecatedEnv.length > 0) {
+      logger.warn(
+        "SOURCE_API is deprecated and ignored: the request path decides the client format. It will be removed in 2.0.",
+      );
+    }
   }
   return _config;
 }

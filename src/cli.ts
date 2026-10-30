@@ -88,12 +88,6 @@ function wantedEnv(
 ): Record<string, string> {
   const wanted: Record<string, string> = {};
 
-  if (args.preset === "claude-code") {
-    wanted.SOURCE_API = "anthropic";
-  } else if (args.preset === "openai-apps") {
-    wanted.SOURCE_API = "openai";
-  }
-
   if (args.target !== undefined) {
     wanted.TARGET_API = args.target;
   }
@@ -188,13 +182,6 @@ function usageLines(): string[] {
   ];
 }
 
-/** The preset whose export lines match a resolved source API. */
-function presetForSource(sourceApi: Provider): CliArgs["preset"] {
-  if (sourceApi === "anthropic") return "claude-code";
-  if (sourceApi === "openai") return "openai-apps";
-  return undefined;
-}
-
 export async function main(argv: string[]): Promise<void> {
   try {
     const args = parseCliArgs(argv);
@@ -229,10 +216,10 @@ export async function main(argv: string[]): Promise<void> {
     await startServer();
     const config = getConfig();
     if (args.preset !== undefined) {
-      // The export lines must match the server that actually started: the
-      // user's env may have overridden the preset's SOURCE_API.
+      // The export lines come from the requested preset — there is no
+      // configured source format; the request path decides the dialect.
       for (const line of clientInstructions(
-        { ...args, preset: presetForSource(config.sourceApi) },
+        args,
         config.port,
         config.proxyApiKey,
       )) {

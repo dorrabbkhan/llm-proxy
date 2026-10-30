@@ -14,7 +14,6 @@ describe("cli", () => {
     );
 
     expect(env).toEqual({
-      SOURCE_API: "anthropic",
       TARGET_API: "ollama",
       MODEL_MAP: "claude-*=qwen2.5:0.5b",
       TARGET_CONTEXT_WINDOW: "32768",
@@ -43,7 +42,6 @@ describe("cli", () => {
     );
 
     expect(env).toEqual({
-      SOURCE_API: "anthropic",
       MODEL_MAP: "claude-*=m",
       TARGET_CONTEXT_WINDOW: "32768",
       UPSTREAM_TIMEOUT_MS: "600000",
@@ -72,7 +70,7 @@ describe("cli", () => {
           UPSTREAM_TIMEOUT_MS: "1234",
         },
       ),
-    ).toEqual(["SOURCE_API", "TARGET_API", "MODEL_MAP", "UPSTREAM_TIMEOUT_MS"]);
+    ).toEqual(["TARGET_API", "MODEL_MAP", "UPSTREAM_TIMEOUT_MS"]);
   });
 
   it("openai-apps instructions", () => {

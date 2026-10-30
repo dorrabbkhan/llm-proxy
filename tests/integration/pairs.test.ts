@@ -158,7 +158,14 @@ describe("provider pair coverage", () => {
       const modelsRoute = PROVIDER_ROUTES[source].find(
         (r) => r.kind === "models",
       )!;
-      const res = await request(app).get(modelsRoute.pathPrefix);
+      // GET /v1/models is shared by openai and anthropic: real Anthropic
+      // clients always send anthropic-version, which is how detectSource
+      // tells them apart (spec §3.2).
+      let req = request(app).get(modelsRoute.pathPrefix);
+      if (source === "anthropic") {
+        req = req.set("anthropic-version", "2023-06-01");
+      }
+      const res = await req;
 
       expect(res.status, JSON.stringify(res.body)).toBe(200);
 
@@ -173,19 +180,6 @@ describe("provider pair coverage", () => {
     resetConfig();
 
     const res = await request(app).get("/v1/chat/completions");
-    expect(res.status).toBe(404);
-  });
-
-  it("returns 404 when path does not match source provider", async () => {
-    process.env.SOURCE_API = "openai";
-    process.env.TARGET_API = "ollama";
-    resetConfig();
-
-    // /api/chat is ollama's path, not openai's
-    const res = await request(app)
-      .post("/api/chat")
-      .send(ollamaFixtures.requests.basic as object);
-
     expect(res.status).toBe(404);
   });
 });

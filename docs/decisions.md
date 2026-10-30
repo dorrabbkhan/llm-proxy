@@ -1793,3 +1793,61 @@ every failure a live-suite defect, not a babelgate defect — fixed as:
 - `index.ts` startup log is `{port, defaultProvider, providers: names()}` — the
   API key is never logged.
 - **Files outside the Files block:** none.
+
+## v1.2 Task 2: detectSource — all formats on one port, SOURCE_API retired
+
+- **Step 0 evidence (spec §3.2):** `anthropic-version` is unconditional, not
+  tied to auth or endpoint — `@anthropic-ai/sdk@0.132.1`
+  `node_modules/@anthropic-ai/sdk/client.js:842` puts
+  `'anthropic-version': '2023-06-01'` in the default header object every
+  request builds. Claude Code's gateway docs likewise list
+  `anthropic-version` among the headers Claude Code includes on API
+  requests (https://code.claude.com/docs/en/llm-gateway-protocol, read
+  2026-10-30). The spec's `x-api-key`/`Authorization` tie-break is
+  therefore not needed; `GET /v1/models` resolves to anthropic iff the
+  header is present.
+- **`detectSource(method, path, headers)`** in `src/routing/detect-source.ts`
+  is pure — it scans `PROVIDER_ROUTES` for every provider matching
+  method + pathPrefix; `anthropic-version` selects anthropic only among
+  matches, otherwise the first match wins. `detectSourceMiddleware()`
+  replaced `resolveSource()` at the same mount point (before the body
+  parser and auth) so their errors render in the detected dialect.
+  `ProxyRequestOptions.source?: Provider` carries it to `proxyRequest`;
+  undefined → null → 404. `GatewayConfig.sourceApi` removed.
+- **`SOURCE_API` retired:** `loadConfig()` requires only `TARGET_API`
+  (message now `"TARGET_API environment variable is required"`); a set
+  `SOURCE_API` is never validated — `INVALID_API` included — and lands
+  in `EnvConfig.deprecatedEnv`; `getConfig()` logs the spec's one
+  `warn` line. `cli.ts` presets no longer emit `SOURCE_API`; export
+  lines come straight from `args.preset` (`presetForSource` deleted).
+- **Named expected-value changes (owner approval), old → new:**
+  - `claude-code.test.ts` `"count_tokens on a non-anthropic source is 404"`
+    → `"count_tokens is answered whatever the configured target"`: 404 →
+    200 + `x-babelgate-token-estimate: true`, still no upstream call.
+  - `env-config.test.ts` required-vars message:
+    `"SOURCE_API and TARGET_API environment variables are required"` →
+    `"TARGET_API environment variable is required"`.
+  - `env-config.test.ts` `"should throw error when SOURCE_API is not a
+    valid provider"` → `"SOURCE_API is ignored and reported as
+    deprecated"`: throw → success, `deprecatedEnv` `["SOURCE_API"]`.
+  - `env-config.test.ts`: five `expect(config.sourceApi)` lines removed.
+  - `cli.test.ts`: `SOURCE_API` dropped from the two `presetEnv` expected
+    objects; override list `["SOURCE_API","TARGET_API","MODEL_MAP",
+    "UPSTREAM_TIMEOUT_MS"]` → `["TARGET_API","MODEL_MAP",
+    "UPSTREAM_TIMEOUT_MS"]`.
+  - `resolve-source.test.ts` deleted; its four path cases carried into
+    `detect-source.test.ts`; `"never throws when the config is broken"`
+    dropped (detectSource reads no config).
+- **Approved by the owner, conductor escalation option A:**
+  - `pairs.test.ts` GET /models: `source === "anthropic"` now sends
+    `anthropic-version: 2023-06-01` (assertions unchanged).
+  - `pairs.test.ts` `"returns 404 when path does not match source
+    provider"` deleted (spec §3.8: other formats' paths now answer; 404
+    coverage stays in `"returns 404 for GET chat paths"` and
+    `proxy.test.ts` `"returns 404 for unmapped paths"`).
+  - `proxy.service.test.ts`: each `proxyRequest()` call passes
+    `{ source: "<provider>" }` matching its path; assertions unchanged;
+    dead `process.env.SOURCE_API` lines removed.
+- **Files outside the Files block:** `tests/integration/pairs.test.ts`
+  and `src/services/proxy.service.test.ts` (the owner-approved
+  adaptations above).

@@ -28,6 +28,12 @@ export interface ProxyResult {
 }
 
 export interface ProxyRequestOptions {
+  /**
+   * Client format detected from the request path (spec §3.2). The route
+   * passes `res.locals.sourceApi`; undefined → proxyRequest returns
+   * null → 404.
+   */
+  source?: Provider;
   /** Incoming query parameters (encoders may branch on them, §3.5) */
   query?: Record<string, string>;
   /** Client disconnect — aborts the upstream request */
@@ -55,8 +61,10 @@ function methodFromPath(path: string): string {
  *   path match → config → canonical boundary validation →
  *   count_tokens → planRoute → chat/chat-stream/models services.
  *
- * Returns null when the path doesn't belong to the configured source
- * provider (route should call next() → 404).
+ * The client format comes from `opts.source` (the detect-source
+ * middleware's read of the request path, spec §3.2). Returns null when
+ * it is unset or the path doesn't belong to that source provider
+ * (route should call next() → 404).
  * Throws ValidationError | UpstreamError | TransformError | ConfigurationError.
  */
 export async function proxyRequest(
@@ -73,9 +81,10 @@ export async function proxyRequest(
   if (!isProviderPath) return null;
 
   const config = getConfig();
-  const sourceApi = config.sourceApi;
+  const sourceApi = opts?.source;
+  if (!sourceApi) return null;
 
-  // Match the incoming path to a route on the configured source provider
+  // Match the incoming path to a route on the detected source provider
   const route = findSourceRoute(sourceApi, method, path);
   if (!route) return null;
 

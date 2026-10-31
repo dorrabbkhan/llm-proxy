@@ -1874,3 +1874,37 @@ every failure a live-suite defect, not a babelgate defect — fixed as:
   owner-approved adaptations above); `.env.example` and
   `src/transformers/adapters/index.ts` (comment-only) — both
   owner-requested 2026-10-30.
+
+## v1.2 Task 3: rules and the full `planRoute`
+
+- **Spec §3.3 complete:** `planRoute` now resolves explicit
+  `provider/model` → alias → rules (`match` + `when`) → default.
+  `parseTarget` (in `rules.ts` per the file map) splits on the first
+  `/` only, and only when the prefix is a registered provider name —
+  case-sensitive — and the rest is non-empty, so model names may carry
+  `/` and `:`. `targets` is the matched target plus its `fallback`
+  list in file order; explicit, alias and default plans carry one
+  target. `proxy.service` computes `estimateInputTokens` once, shares
+  it between `count_tokens` and routing, and passes
+  `new Set(registry.names())` as the provider-name set.
+- **`applyModelMap` kept** (the plan's Files block says remove it):
+  removing it would delete three existing assertions in
+  `model-map.test.ts`, which Step 5 says stay unchanged; removal
+  deferred to an owner decision. Nothing routes through it —
+  `MODEL_MAP` becomes `RouteRule`s in `env-config` (Task 1) and
+  `planRoute` matches on them directly. `git diff main --
+  src/utils/model-map.test.ts` is empty.
+- **Review Focus 4 pinned on the plan's exact path:** the named test
+  uses `POST /v1beta/models/ollama%2Fqwen3:generateContent`
+  (non-streaming), asserting the Ollama upstream receives `qwen3` and
+  the reply's `modelVersion` is `ollama/qwen3`. A streamed twin
+  (`:streamGenerateContent`, JSON-array elements) is kept as an extra
+  case.
+- **Files outside the Files block:** `src/transformers/adapters/
+  gemini.adapter.ts` — `fromCanonicalResponse` now emits
+  `modelVersion: response.model`. The named Review Focus 4 test can
+  only observe the reply model through `modelVersion`, the field the
+  real API returns on every `GenerateContentResponse` and our stream
+  encoder already sends on every element; the non-streaming encoder
+  simply lacked it. Round-trip and fixture contracts are unaffected
+  (`toCanonicalResponse` ignores the field).

@@ -135,12 +135,16 @@ export async function proxyRequest(
     );
   }
 
+  // The chars/4 input estimate is computed once — count_tokens answers
+  // with it and routing `when` conditions consume it (§3.3, §3.5).
+  const estimatedInputTokens = estimateInputTokens(parsed.data);
+
   // §3.5: count_tokens is answered locally — a chars/4 estimate with the
   // estimate header, never an upstream call.
   if (route.kind === "count_tokens") {
     logger.info({ requestId, sourceApi }, "count_tokens answered locally");
     return {
-      body: { input_tokens: estimateInputTokens(parsed.data) },
+      body: { input_tokens: estimatedInputTokens },
       headers: { "x-babelgate-token-estimate": "true" },
     };
   }
@@ -150,7 +154,7 @@ export async function proxyRequest(
   const requestedModel = modelFromPath ?? parsed.data.model;
   const plan = planRoute({
     requestedModel,
-    estimatedInputTokens: estimateInputTokens(parsed.data),
+    estimatedInputTokens,
     routing: config.routing,
     providerNames: new Set(config.registry.names()),
   });

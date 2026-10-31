@@ -68,6 +68,15 @@ type GeminiCandidate = NonNullable<
   GenerateContentResponse["candidates"]
 >[number];
 
+/**
+ * GenerateContentResponse on the wire carries `modelVersion` (every real
+ * response and every streamed element does — see tests/fixtures); the
+ * SDK type doesn't declare it, same gap as functionCall.id.
+ */
+type GeminiGenerateContentResponse = GenerateContentResponse & {
+  modelVersion?: string;
+};
+
 export const geminiAdapter: ProviderAdapter<
   GenerateContentRequest,
   GenerateContentResponse
@@ -418,7 +427,7 @@ export function mapFinishReason(
 
 export function fromCanonicalResponse(
   response: CanonicalResponse,
-): GenerateContentResponse {
+): GeminiGenerateContentResponse {
   const content =
     typeof response.message.content === "string"
       ? response.message.content
@@ -444,6 +453,9 @@ export function fromCanonicalResponse(
         index: 0,
       },
     ],
+    // §3.5: replies carry the requested model name — on the wire that's
+    // modelVersion, matching the stream encoder.
+    modelVersion: response.model,
     usageMetadata: response.usage
       ? {
           promptTokenCount: response.usage.inputTokens,

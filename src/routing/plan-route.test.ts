@@ -167,6 +167,36 @@ describe("planRoute", () => {
     });
   });
 
+  it("alias lookup ignores inherited object properties", () => {
+    const routing = {
+      defaultProvider: "ollama",
+      aliases: { fast: { provider: "ollama", model: "qwen2.5-coder:7b" } },
+      rules: [
+        {
+          match: "claude-*",
+          to: { provider: "ollama", model: "qwen3-coder:30b" },
+          fallback: [],
+        },
+      ],
+    };
+
+    // None of these is a defined alias or matches `claude-*` — each must
+    // fall through to the default, not resolve to an Object.prototype
+    // member.
+    for (const inherited of [
+      "constructor",
+      "toString",
+      "hasOwnProperty",
+      "valueOf",
+      "__proto__",
+    ]) {
+      expect(planRoute(input({ requestedModel: inherited, routing }))).toEqual({
+        targets: [{ provider: "ollama", model: inherited }],
+        reason: "default",
+      });
+    }
+  });
+
   it("when.minInputTokens at, below and above the threshold", () => {
     const routing = {
       defaultProvider: "ollama",

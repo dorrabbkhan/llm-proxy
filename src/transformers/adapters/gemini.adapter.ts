@@ -453,7 +453,7 @@ export function fromCanonicalResponse(
         index: 0,
       },
     ],
-    // §3.5: replies carry the requested model name — on the wire that's
+    // §3.3: replies carry the requested model name — on the wire that's
     // modelVersion, matching the stream encoder.
     modelVersion: response.model,
     usageMetadata: response.usage

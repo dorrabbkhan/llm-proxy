@@ -136,7 +136,7 @@ export async function proxyRequest(
   }
 
   // The chars/4 input estimate is computed once — count_tokens answers
-  // with it and routing `when` conditions consume it (§3.3, §3.5).
+  // with it (§3.5) and routing `when` conditions consume it (§3.3).
   const estimatedInputTokens = estimateInputTokens(parsed.data);
 
   // §3.5: count_tokens is answered locally — a chars/4 estimate with the

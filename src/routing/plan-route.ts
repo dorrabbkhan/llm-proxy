@@ -56,7 +56,9 @@ export function planRoute(input: PlanRouteInput): RoutePlan {
     return { targets: [explicit], reason: "explicit" };
   }
 
-  const alias = input.routing.aliases[input.requestedModel];
+  const alias = Object.hasOwn(input.routing.aliases, input.requestedModel)
+    ? input.routing.aliases[input.requestedModel]
+    : undefined;
   if (alias !== undefined) {
     return { targets: [alias], reason: `alias:${input.requestedModel}` };
   }

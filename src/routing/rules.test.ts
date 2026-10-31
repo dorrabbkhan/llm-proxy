@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { globMatch } from "./rules";
+import { globMatch, parseTarget } from "./rules";
 
 /**
  * The glob cases of utils/model-map.test.ts run against the moved
@@ -32,5 +32,42 @@ describe("globMatch", () => {
     // `*` matches an empty run too — but the literals on both sides stay
     expect(globMatch("x-*-z", "x--z")).toBe(true);
     expect(globMatch("x-*-z", "x-z")).toBe(false);
+  });
+});
+
+/**
+ * `provider/model` targets (spec §3.3): the text before the first `/`
+ * must be a registered provider name and the rest non-empty. The split
+ * is on the first `/` only — model names may contain `/` and `:`.
+ */
+describe("parseTarget", () => {
+  const names = new Set(["ollama", "openrouter"]);
+
+  it("splits on the first slash when the prefix is a registered provider", () => {
+    expect(parseTarget("ollama/qwen3-coder:30b", names)).toEqual({
+      provider: "ollama",
+      model: "qwen3-coder:30b",
+    });
+    expect(parseTarget("openrouter/qwen/qwen3-coder", names)).toEqual({
+      provider: "openrouter",
+      model: "qwen/qwen3-coder",
+    });
+  });
+
+  it("unregistered prefix is not a target", () => {
+    expect(parseTarget("qwen/qwen3-coder", names)).toBeUndefined();
+  });
+
+  it("provider names are case-sensitive", () => {
+    expect(parseTarget("OLLAMA/x", names)).toBeUndefined();
+  });
+
+  it("empty model after the slash is not a target", () => {
+    expect(parseTarget("ollama/", names)).toBeUndefined();
+  });
+
+  it("no slash is not a target", () => {
+    expect(parseTarget("gpt-4", names)).toBeUndefined();
+    expect(parseTarget("", names)).toBeUndefined();
   });
 });

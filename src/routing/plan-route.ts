@@ -1,4 +1,4 @@
-import { globMatch } from "./rules";
+import { globMatch, parseTarget } from "./rules";
 
 /** One provider/model pair a request can be sent to. */
 export interface RouteTarget {
@@ -41,17 +41,38 @@ export interface PlanRouteInput {
 
 /**
  * Pure model → route resolution (spec §3.3): no I/O, clock or
- * randomness. Task 1 implements steps 3–4 only — the first rule whose
- * `match` glob matches wins (when/fallback ignored), then the default
- * provider with the model unchanged. Explicit `provider/model` targets
- * and aliases arrive with Task 3.
+ * randomness. Resolution order:
+ *   1. explicit `provider/model` (first-`/` prefix is a registered
+ *      provider) — rules are skipped;
+ *   2. alias — exact, case-sensitive name;
+ *   3. routes in order — first `match` glob whose `when` also holds;
+ *   4. the default provider, model unchanged.
+ * `targets` is the matched target followed by its fallback list;
+ * explicit, alias and default plans carry no fallbacks.
  */
 export function planRoute(input: PlanRouteInput): RoutePlan {
-  for (const [index, rule] of input.routing.rules.entries()) {
-    if (globMatch(rule.match, input.requestedModel)) {
-      return { targets: [rule.to], reason: `rule:${index}` };
-    }
+  const explicit = parseTarget(input.requestedModel, input.providerNames);
+  if (explicit !== undefined) {
+    return { targets: [explicit], reason: "explicit" };
   }
+
+  const alias = Object.hasOwn(input.routing.aliases, input.requestedModel)
+    ? input.routing.aliases[input.requestedModel]
+    : undefined;
+  if (alias !== undefined) {
+    return { targets: [alias], reason: `alias:${input.requestedModel}` };
+  }
+
+  for (const [index, rule] of input.routing.rules.entries()) {
+    if (!globMatch(rule.match, input.requestedModel)) continue;
+    const min = rule.when?.minInputTokens;
+    if (min !== undefined && input.estimatedInputTokens < min) continue;
+    return {
+      targets: [rule.to, ...rule.fallback],
+      reason: `rule:${index}`,
+    };
+  }
+
   return {
     targets: [
       {

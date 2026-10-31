@@ -11,7 +11,8 @@ import {
 import { setupServer } from "msw/node";
 import request from "supertest";
 import { app } from "../../src/app";
-import { resetConfig } from "../../src/config/env-config";
+import { loadConfig, resetConfig } from "../../src/config/env-config";
+import { presetEnv } from "../../src/cli";
 import { adapters } from "../../src/transformers";
 import { makeCanonicalError } from "../../src/utils/canonical-error";
 import {
@@ -58,6 +59,9 @@ afterEach(() => {
   resetOverrides();
   resetStreamCase();
   delete process.env.UPSTREAM_RETRIES;
+  delete process.env.MODEL_MAP;
+  delete process.env.TARGET_CONTEXT_WINDOW;
+  delete process.env.UPSTREAM_TIMEOUT_MS;
   resetConfig();
 });
 
@@ -147,5 +151,135 @@ describe("gateway: every format on one port (spec §3.2)", () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+});
+
+/** supertest parses streamed bodies as opaque — collect them as text. */
+function postStream(path: string, body: unknown): request.Test {
+  return request(app)
+    .post(path)
+    .send(body)
+    .buffer(true)
+    .parse((res, cb) => {
+      let text = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk: string) => (text += chunk));
+      res.on("end", () => cb(null, text));
+    });
+}
+
+/**
+ * Model → target resolution end to end (spec §3.3): MODEL_MAP rules,
+ * explicit `provider/model` names in the Gemini path, and the preset
+ * envs building the v1.1-equivalent routing table.
+ */
+describe("gateway: routing rules (spec §3.3)", () => {
+  it("MODEL_MAP still rewrites the upstream model; reply keeps the requested name", async () => {
+    process.env.MODEL_MAP = "claude-*=qwen3-coder:30b";
+    resetConfig();
+
+    const res = await request(app)
+      .post("/v1/messages")
+      .send(anthropicFixtures.requests.basic as object);
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(capturedRequests.ollama).toHaveLength(1);
+    expect(capturedRequests.ollama[0]).toMatchObject({
+      model: "qwen3-coder:30b",
+    });
+    expect(res.body.model).toBe("claude-3-opus-20240229");
+  });
+
+  // Review Focus 4: a percent-encoded `provider/model` in the Gemini
+  // path resolves exactly like a body model — `ollama/qwen3` targets
+  // the ollama provider with upstream model `qwen3`; the reply keeps
+  // the requested name `ollama/qwen3` (modelVersion on the wire).
+  it("gemini path model resolves like a body model", async () => {
+    const res = await request(app)
+      .post("/v1beta/models/ollama%2Fqwen3:generateContent")
+      .send(geminiFixtures.requests.basic as object);
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(capturedRequests.ollama).toHaveLength(1);
+    expect(capturedRequests.ollama[0]).toMatchObject({ model: "qwen3" });
+    expect(res.body.modelVersion).toBe("ollama/qwen3");
+  });
+
+  // Same resolution through the streaming flow: every streamed element
+  // carries modelVersion = the name the client asked for.
+  it("gemini path model resolves like a body model — streamed", async () => {
+    const res = await postStream(
+      "/v1beta/models/ollama%2Fqwen3:streamGenerateContent",
+      geminiFixtures.requests.basic as object,
+    );
+
+    expect(res.status).toBe(200);
+    expect(capturedRequests.ollama).toHaveLength(1);
+    expect(capturedRequests.ollama[0]).toMatchObject({ model: "qwen3" });
+
+    // No alt=sse → the streamed JSON array form; every element carries
+    // modelVersion = the name the client asked for.
+    const elements = JSON.parse(res.body as string) as {
+      modelVersion?: string;
+    }[];
+    expect(elements.length).toBeGreaterThan(0);
+    for (const el of elements) {
+      expect(el.modelVersion).toBe("ollama/qwen3");
+    }
+  });
+
+  it("preset envs build the v1.1-equivalent routing", () => {
+    // The claude-code preset env (spec §4.2 golden test): one provider
+    // named after TARGET_API carrying TARGET_CONTEXT_WINDOW, a
+    // claude-* rule from MODEL_MAP, no provider timeout override — the
+    // preset's UPSTREAM_TIMEOUT_MS applies globally instead.
+    const env = presetEnv(
+      { preset: "claude-code", target: "ollama", model: "m" },
+      {},
+    );
+    Object.assign(process.env, env);
+    resetConfig();
+
+    const config = loadConfig();
+    expect(config.registry.names()).toEqual(["ollama"]);
+    const entry = config.registry.get("ollama");
+    expect(entry).toMatchObject({
+      name: "ollama",
+      type: "ollama",
+      baseUrl: MOCK_BASE_URLS.ollama,
+      contextWindow: 32768,
+    });
+    expect(entry.timeoutMs).toBeUndefined();
+    expect(config.upstreamTimeoutMs).toBe(600000);
+    expect(config.routing).toEqual({
+      defaultProvider: "ollama",
+      aliases: {},
+      rules: [
+        {
+          match: "claude-*",
+          to: { provider: "ollama", model: "m" },
+          fallback: [],
+        },
+      ],
+    });
+
+    // The openai-apps preset env is just TARGET_API → one provider, no
+    // rules.
+    Object.assign(
+      process.env,
+      presetEnv({ preset: "openai-apps", target: "openai" }, {}),
+    );
+    delete process.env.MODEL_MAP;
+    delete process.env.TARGET_CONTEXT_WINDOW;
+    delete process.env.UPSTREAM_TIMEOUT_MS;
+    resetConfig();
+
+    const openaiConfig = loadConfig();
+    expect(openaiConfig.registry.names()).toEqual(["openai"]);
+    expect(openaiConfig.routing).toEqual({
+      defaultProvider: "openai",
+      aliases: {},
+      rules: [],
+    });
   });
 });

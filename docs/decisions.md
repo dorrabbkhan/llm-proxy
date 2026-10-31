@@ -1889,8 +1889,11 @@ every failure a live-suite defect, not a babelgate defect — fixed as:
   `new Set(registry.names())` as the provider-name set.
 - **`applyModelMap` kept** (the plan's Files block says remove it):
   removing it would delete three existing assertions in
-  `model-map.test.ts`, which Step 5 says stay unchanged; removal
-  deferred to an owner decision. Nothing routes through it —
+  `model-map.test.ts`, which Step 5 says stay unchanged; owner
+  decision, conductor escalation option 2A (2026-10-31): keep it for
+  now; remove it in a later cleanup task, where the owner approves
+  deleting the three `model-map.test.ts` cases. Nothing routes
+  through it —
   `MODEL_MAP` becomes `RouteRule`s in `env-config` (Task 1) and
   `planRoute` matches on them directly. `git diff main --
   src/utils/model-map.test.ts` is empty.
@@ -1907,4 +1910,9 @@ every failure a live-suite defect, not a babelgate defect — fixed as:
   real API returns on every `GenerateContentResponse` and our stream
   encoder already sends on every element; the non-streaming encoder
   simply lacked it. Round-trip and fixture contracts are unaffected
-  (`toCanonicalResponse` ignores the field).
+  (`toCanonicalResponse` ignores the field). Approved by the owner,
+  conductor escalation option 1A (2026-10-31): a named exception to
+  the Global Constraint 'adapters do not change' — the Review Focus 4
+  test needs the reply model, and `modelVersion` is the documented
+  output field (Google `GenerateContentResponse`; recorded fixture
+  `tests/fixtures/streams/gemini/max_tokens.nonstreaming.json`).

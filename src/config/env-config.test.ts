@@ -30,16 +30,17 @@ describe("Environment Configuration", () => {
     unsetEnv("TARGET_API");
 
     expect(() => loadConfig()).toThrow(
-      "SOURCE_API and TARGET_API environment variables are required",
+      "TARGET_API environment variable is required",
     );
   });
 
-  it("should throw error when SOURCE_API is not a valid provider", () => {
+  it("SOURCE_API is ignored and reported as deprecated", () => {
     process.env.SOURCE_API = "INVALID_API";
     process.env.TARGET_API = "openai";
     process.env.OPENAI_API_KEY = "test-key";
 
-    expect(() => loadConfig()).toThrow("SOURCE_API must be one of:");
+    const config = loadConfig();
+    expect(config.deprecatedEnv).toEqual(["SOURCE_API"]);
   });
 
   it("should throw error when TARGET_API is not a valid provider", () => {
@@ -67,7 +68,6 @@ describe("Environment Configuration", () => {
 
     const config = loadConfig();
 
-    expect(config.sourceApi).toBe("openai");
     expect(config.targetApi).toBe("openai");
     expect(config.port).toBe(4000);
     expect(config.targetApiKey).toBe("test-openai-key");
@@ -82,7 +82,6 @@ describe("Environment Configuration", () => {
 
     const config = loadConfig();
 
-    expect(config.sourceApi).toBe("openai");
     expect(config.targetApi).toBe("gemini");
     expect(config.port).toBe(4000);
     expect(config.targetApiKey).toBe("test-gemini-key");
@@ -99,7 +98,6 @@ describe("Environment Configuration", () => {
 
     const config = loadConfig();
 
-    expect(config.sourceApi).toBe("openai");
     expect(config.targetApi).toBe("anthropic");
     expect(config.port).toBe(4000);
     expect(config.targetApiKey).toBe("test-anthropic-key");
@@ -114,7 +112,6 @@ describe("Environment Configuration", () => {
 
     const config = loadConfig();
 
-    expect(config.sourceApi).toBe("openai");
     expect(config.targetApi).toBe("ollama");
     expect(config.port).toBe(4000);
     expect(config.targetApiKey).toBeUndefined();
@@ -138,7 +135,6 @@ describe("Environment Configuration", () => {
 
     const config = loadConfig();
 
-    expect(config.sourceApi).toBe("openai");
     expect(config.targetApi).toBe("gemini");
   });
 

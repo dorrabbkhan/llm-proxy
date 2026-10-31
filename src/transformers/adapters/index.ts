@@ -145,8 +145,7 @@ export const PROVIDER_ROUTES: Record<Provider, ProviderRoute[]> = {
 
 /**
  * Match an incoming request to a route on the given source provider
- * (method + path prefix). Used by resolve-source middleware and
- * proxy.service.
+ * (method + path prefix). Used by proxy.service.
  */
 export function findSourceRoute(
   source: Provider,

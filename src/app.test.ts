@@ -13,7 +13,7 @@ describe("app", () => {
       .send({ data: "x".repeat(2000) });
 
     expect(res.status).toBe(413);
-    expect(res.body.error.code).toBe("PAYLOAD_TOO_LARGE");
+    expect(res.body.error.code).toBe("request_too_large");
     vi.unstubAllEnvs();
   });
   describe("PROXY_API_KEY auth", () => {
@@ -26,7 +26,7 @@ describe("app", () => {
         .post("/v1/chat/completions")
         .send({});
       expect(noHeader.status).toBe(401);
-      expect(noHeader.body.error.code).toBe("UNAUTHORIZED");
+      expect(noHeader.body.error.code).toBe("authentication");
 
       const wrongKey = await request(authedApp)
         .post("/v1/chat/completions")

@@ -202,14 +202,15 @@ describe("Claude Code essentials (spec §3.5)", () => {
     expect(capturedRequests.ollama).toHaveLength(0);
   });
 
-  it("count_tokens on a non-anthropic source is 404", async () => {
+  it("count_tokens is answered whatever the configured target", async () => {
     setPair("openai", "ollama");
 
     const res = await request(app)
       .post("/v1/messages/count_tokens")
       .send({ model: "m", messages: [{ role: "user", content: "hi" }] });
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
+    expect(res.headers["x-babelgate-token-estimate"]).toBe("true");
     expect(capturedRequests.ollama).toHaveLength(0);
   });
 

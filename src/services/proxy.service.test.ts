@@ -42,7 +42,6 @@ const OPENAI_RESPONSE_BODY = {
 };
 
 beforeEach(() => {
-  process.env.SOURCE_API = "openai";
   process.env.TARGET_API = "ollama";
   process.env.OLLAMA_API_BASE_URL = "http://ollama.test";
   process.env.OPENAI_API_BASE_URL = "http://openai.test";
@@ -72,14 +71,24 @@ afterEach(() => {
 
 describe("proxyRequest", () => {
   it("returns null for non-provider paths", async () => {
-    expect(await proxyRequest("/random/path", "POST", {}, "r1")).toBeNull();
+    expect(
+      await proxyRequest("/random/path", "POST", {}, "r1", {
+        source: "openai",
+      }),
+    ).toBeNull();
     expect(mockPostJson).not.toHaveBeenCalled();
   });
 
   it("returns null when path belongs to a different provider", async () => {
     // /api/chat is ollama's prefix but source is openai
     expect(
-      await proxyRequest("/api/chat", "POST", VALID_OPENAI_REQUEST, "r1"),
+      await proxyRequest(
+        "/api/chat",
+        "POST",
+        VALID_OPENAI_REQUEST,
+        "r1",
+        { source: "openai" },
+      ),
     ).toBeNull();
     expect(mockPostJson).not.toHaveBeenCalled();
   });
@@ -90,6 +99,7 @@ describe("proxyRequest", () => {
       "POST",
       { model: "gpt-4" }, // missing messages
       "r1",
+      { source: "openai" },
     ).catch((e) => e);
 
     expect(err).toBeInstanceOf(ValidationError);
@@ -104,6 +114,7 @@ describe("proxyRequest", () => {
       "POST",
       VALID_OPENAI_REQUEST,
       "r1",
+      { source: "openai" },
     ).catch((e) => e);
 
     expect(err).toBeInstanceOf(UpstreamError);
@@ -121,6 +132,7 @@ describe("proxyRequest", () => {
       "POST",
       VALID_OPENAI_REQUEST,
       "r1",
+      { source: "openai" },
     ).catch((e) => e);
 
     expect(err).toBeInstanceOf(UpstreamError);
@@ -154,6 +166,7 @@ describe("proxyRequest", () => {
       "POST",
       VALID_OPENAI_REQUEST,
       "r1",
+      { source: "openai" },
     );
 
     expect(mockPostJson).toHaveBeenCalledWith(
@@ -187,6 +200,7 @@ describe("proxyRequest", () => {
       "POST",
       { ...VALID_OPENAI_REQUEST, stream: true },
       "r1",
+      { source: "openai" },
     );
 
     expect(mockPostStream).toHaveBeenCalledWith(
@@ -205,7 +219,6 @@ describe("proxyRequest", () => {
   });
 
   it("gemini :streamGenerateContent streams (no alt → JSON array)", async () => {
-    process.env.SOURCE_API = "gemini";
     resetConfig();
     const ndjson = readFileSync(
       "tests/fixtures/streams/ollama/text.ndjson",
@@ -226,6 +239,7 @@ describe("proxyRequest", () => {
       "POST",
       { contents: [{ role: "user", parts: [{ text: "Hello" }] }] },
       "r1",
+      { source: "gemini" },
     );
 
     expect(mockPostStream).toHaveBeenCalledWith(
@@ -246,7 +260,6 @@ describe("proxyRequest", () => {
   });
 
   it("gemini :countTokens → NotSupportedError 'countTokens is not supported'", async () => {
-    process.env.SOURCE_API = "gemini";
     resetConfig();
 
     const err = await proxyRequest(
@@ -254,6 +267,7 @@ describe("proxyRequest", () => {
       "POST",
       { contents: [{ role: "user", parts: [{ text: "Hello" }] }] },
       "r1",
+      { source: "gemini" },
     ).catch((e) => e);
 
     expect(err).toBeInstanceOf(NotSupportedError);
@@ -263,7 +277,6 @@ describe("proxyRequest", () => {
   });
 
   it("gemini source takes the model from the request path", async () => {
-    process.env.SOURCE_API = "gemini";
     resetConfig();
 
     await proxyRequest(
@@ -273,6 +286,7 @@ describe("proxyRequest", () => {
         contents: [{ role: "user", parts: [{ text: "Hello" }] }],
       },
       "r1",
+      { source: "gemini" },
     );
 
     expect(mockPostJson).toHaveBeenCalledWith(
@@ -289,6 +303,7 @@ describe("proxyRequest", () => {
       "POST",
       VALID_OPENAI_REQUEST,
       "r1",
+      { source: "openai" },
     );
 
     expect(result).not.toBeNull();
@@ -308,6 +323,7 @@ describe("proxyRequest", () => {
       "POST",
       VALID_OPENAI_REQUEST,
       "r1",
+      { source: "openai" },
     );
 
     const completed = infoSpy.mock.calls.find(
@@ -348,6 +364,7 @@ describe("proxyRequest", () => {
       "POST",
       { ...VALID_OPENAI_REQUEST, stream: true },
       "r1",
+      { source: "openai" },
     );
 
     expect(result).not.toBeNull();
@@ -386,6 +403,7 @@ describe("proxyRequest", () => {
       "POST",
       { ...VALID_OPENAI_REQUEST, stream: true },
       "r1",
+      { source: "openai" },
     );
 
     expect(mockPostStream).toHaveBeenCalledTimes(1);
@@ -400,7 +418,11 @@ describe("proxyRequest", () => {
   });
 
   it("returns null for chat path with wrong method (GET)", async () => {
-    expect(await proxyRequest("/api/chat", "GET", undefined, "r1")).toBeNull();
+    expect(
+      await proxyRequest("/api/chat", "GET", undefined, "r1", {
+        source: "ollama",
+      }),
+    ).toBeNull();
     expect(mockGetJson).not.toHaveBeenCalled();
   });
 
@@ -420,7 +442,9 @@ describe("proxyRequest", () => {
       durationMs: 8,
     });
 
-    const result = await proxyRequest("/v1/models", "GET", undefined, "r1");
+    const result = await proxyRequest("/v1/models", "GET", undefined, "r1", {
+      source: "openai",
+    });
 
     expect(mockGetJson).toHaveBeenCalledWith(
       expect.objectContaining({ url: "http://ollama.test/api/tags" }),
@@ -438,7 +462,13 @@ describe("proxyRequest", () => {
 
   it("returns null for models path with wrong method (POST)", async () => {
     expect(
-      await proxyRequest("/v1/models", "POST", VALID_OPENAI_REQUEST, "r1"),
+      await proxyRequest(
+        "/v1/models",
+        "POST",
+        VALID_OPENAI_REQUEST,
+        "r1",
+        { source: "openai" },
+      ),
     ).toBeNull();
     expect(mockPostJson).not.toHaveBeenCalled();
     expect(mockGetJson).not.toHaveBeenCalled();
@@ -466,6 +496,7 @@ describe("proxyRequest", () => {
       "POST",
       VALID_OPENAI_REQUEST,
       "r1",
+      { source: "openai" },
     );
 
     expect(mockPostJson).toHaveBeenCalledWith(

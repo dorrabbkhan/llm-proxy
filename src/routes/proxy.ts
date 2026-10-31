@@ -1,6 +1,7 @@
 import { once } from "node:events";
 import { Router } from "express";
 import { proxyRequest } from "../services/proxy.service";
+import type { Provider } from "../transformers";
 import { ProxyError, TransformError } from "../utils/errors";
 
 /**
@@ -25,6 +26,9 @@ proxyRouter.use(async (req, res, next) => {
       req.body,
       String(req.id),
       {
+        // Client format detected by the middleware; undefined → the
+        // service returns null → 404.
+        source: res.locals.sourceApi as Provider | undefined,
         query: Object.fromEntries(
           Object.entries(req.query).map(([k, v]) => [k, String(v)]),
         ),
